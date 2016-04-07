@@ -1,0 +1,4 @@
+%% encoding: UTF-8
+{application,gen_c_server}.
+{packages,[]}.
+{modules,[gen_c_server]}.

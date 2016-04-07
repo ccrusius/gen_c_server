@@ -1,0 +1,273 @@
+apply plugin: 'c'
+
+//==============================================================================
+//
+// Why not rebar?
+//
+// Because, while it works well in its own space, as soon as you get out of it
+// it is not flexible enough. The C compilation support, for example, is not
+// really there. I need something that works on SmartOS (Solaris), Windows, Mac,
+// and Linux. My options are Gradle, CMake, and Shake, and Gradle is the one
+// that made all the integrations I needed the least painful.
+//
+//==============================================================================
+
+//==============================================================================
+//
+// Empty tasks to be extended as we go.
+//
+//==============================================================================
+task(install)
+
+//==============================================================================
+//
+// Erlang
+//
+//==============================================================================
+def erl(Cmd) {
+    def stdout = new ByteArrayOutputStream()
+    exec {
+        commandLine 'erl', '-noshell', '-s', 'init', 'stop', '-eval', Cmd
+        standardOutput = stdout
+    }
+    return stdout.toString().trim()
+}
+
+ext {
+    eiInclude = erl('io:format("~s", [code:lib_dir(erl_interface, include)]).')
+    eiLib     = erl('io:format("~s", [code:lib_dir(erl_interface, lib)]).')
+}
+
+task erlc {
+  ext.destDir = new File("$rootDir/build/install/lib/gen_c_server/ebin")
+  inputs.file "src/gen_c_server.erl"
+  outputs.file "$destDir/gen_c_server.beam"
+  doLast {
+    destDir.mkdirs()
+    exec {
+      commandLine 'erlc', '-o', "$destDir/", 'src/gen_c_server.erl'
+    }
+  }
+}
+
+install.dependsOn erlc
+
+//==============================================================================
+//
+// Erlang app files
+//
+//==============================================================================
+task install_app(type: Copy) {
+  from 'src'
+  into "$rootDir/build/install/lib/gen_c_server/ebin"
+  include '**/*.app.src'
+  rename '\\.src$', ''
+}
+
+install.dependsOn install_app
+
+//==============================================================================
+//
+// Sources
+//
+//==============================================================================
+task install_src(type: Copy) {
+  from 'src'
+  into "$rootDir/build/install/lib/gen_c_server/src"
+  include '**/*.erl'
+}
+
+install.dependsOn install_src
+
+//==============================================================================
+//
+// Includes
+//
+//==============================================================================
+task install_include(type: Copy) {
+  from 'include'
+  into "$rootDir/build/install/lib/gen_c_server/include"
+  include '**/*.h'
+}
+
+install.dependsOn install_include
+
+//==============================================================================
+//
+// Documentation
+//
+//==============================================================================
+task edoc {
+  doLast {
+    def destDir = "{dir,\"$rootDir/doc\"}"
+    def srcDir = "\"$rootDir/src\""
+    erl("edoc:application(gen_c_server,$srcDir,[$destDir]).")
+  }
+}
+
+task install_edoc(type: Copy, dependsOn: edoc) {
+  from 'doc'
+  into "$rootDir/build/install/lib/gen_c_server/doc"
+  include '**/*'
+}
+
+install.dependsOn install_edoc
+
+//==============================================================================
+//
+// Testing
+//
+//==============================================================================
+task ct {
+  dependsOn install
+  ext.destDir = new File("$rootDir/build/test")
+  ext.suites = fileTree(dir: "$rootDir/test", include: '**/*_SUITE.erl')
+  doLast {
+    destDir.mkdirs()
+    exec {
+      executable 'ct_run'
+      args '-pa', "$rootDir/build/install/lib/gen_c_server/ebin"
+      args '-logdir', "$destDir"
+      args '-suite'
+      args suites
+      standardInput System.in
+      environment 'ROOT_DIR': "$rootDir"
+    }
+  }
+}
+
+//==============================================================================
+//
+// Erlang shell
+//
+//==============================================================================
+task shell {
+  dependsOn install
+  doLast {
+    def command = [ 'erl', '-name', 'gradle', '-pa', "$rootDir/build/install" ]
+    def proc = new ProcessBuilder((String[])command)
+        .redirectOutput(ProcessBuilder.Redirect.INHERIT)
+        .redirectInput(ProcessBuilder.Redirect.INHERIT)
+        .redirectError(ProcessBuilder.Redirect.INHERIT)
+        .start()
+    proc.waitFor()
+    if (0 != proc.exitValue()) {
+      throw new RuntimeException(
+        "erlang shell exited with status: ${proc.exitValue()}")
+    }
+  }
+}
+
+//==============================================================================
+//
+// C
+//
+//==============================================================================
+model {
+  binaries {
+    all {
+      cCompiler.args "-I$eiInclude", "-D_REENTRANT"
+      linker.args "-L$eiLib", "-lerl_interface", "-lei"
+    }
+  }
+  components {
+    //==========================================================================
+    //
+    // gen_c_server native library
+    //
+    //==========================================================================
+    gen_c_server(NativeLibrarySpec) {
+      binaries.withType(SharedLibraryBinarySpec) {
+        buildable = false
+      }
+      sources.c {
+        source {
+          srcDir  "c_src"
+          include "*.c"
+        }
+        exportedHeaders {
+          srcDir  "include"
+        }
+      }
+      binaries.withType(StaticLibraryBinarySpec) { lib ->
+        lib.tasks.withType(CreateStaticLibrary) { linkTask ->
+          linkTask << {
+            copy {
+              from lib.staticLibraryFile
+              into file("$rootDir/build/install/lib/gen_c_server/lib/")
+            }
+          }
+          install.dependsOn lib
+        }
+      }
+    }
+    //==========================================================================
+    //
+    // Test C nodes
+    //
+    //==========================================================================
+    def test_src = fileTree(dir: "$rootDir/test", include: '**/c_src/*.c')
+
+    test_src.each { src ->
+    }
+
+    call_counter(NativeExecutableSpec) {
+      sources.c {
+        source {
+          srcDir  "test/call_counter/c_src"
+          include "*.c"
+        }
+        exportedHeaders {
+          srcDir  "include"
+        }
+      }
+      binaries.all {
+        lib library: 'gen_c_server', linkage: 'static'
+        linker.args "-L$eiLib", "-lerl_interface", "-lei"
+      }
+    }
+    crashy(NativeExecutableSpec) {
+      sources.c {
+        source {
+          srcDir  "test/crashy/c_src"
+          include "*.c"
+        }
+        exportedHeaders {
+          srcDir  "include"
+        }
+      }
+      binaries.all {
+        lib library: 'gen_c_server', linkage: 'static'
+        linker.args "-L$eiLib", "-lerl_interface", "-lei"
+      }
+    }
+    reply_this(NativeExecutableSpec) {
+      sources.c {
+        source {
+          srcDir  "test/reply_this/c_src"
+          include "*.c"
+        }
+        exportedHeaders {
+          srcDir  "include"
+        }
+      }
+      binaries.all {
+        lib library: 'gen_c_server', linkage: 'static'
+        linker.args "-L$eiLib", "-lerl_interface", "-lei"
+      }
+    }
+  }
+  binaries {
+    withType(NativeExecutableBinarySpec) { bin ->
+      bin.tasks.withType(LinkExecutable) { linkTask ->
+        linkTask << {
+          copy {
+            from outputFile
+            into file("$rootDir/build/cnodes/")
+          }
+        }
+        install.dependsOn linkTask
+      }
+    }
+  }
+}

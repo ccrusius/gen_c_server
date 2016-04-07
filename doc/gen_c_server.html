@@ -1,0 +1,308 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<title>Module gen_c_server</title>
+<link rel="stylesheet" type="text/css" href="stylesheet.css" title="EDoc">
+</head>
+<body bgcolor="white">
+<div class="navbar"><a name="#navbar_top"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>
+<hr>
+
+<h1>Module gen_c_server</h1>
+<ul class="index"><li><a href="#description">Description</a></li><li><a href="#index">Function Index</a></li><li><a href="#functions">Function Details</a></li></ul>A <code>gen_server</code> for C nodes.
+<p>Copyright © 2016 Cesar Crusius
+ </p>
+
+<p><b>Authors:</b> Cesar Crusius.</p>
+
+<h2><a name="description">Description</a></h2><p>A <code>gen_server</code> for C nodes.</p>
+ 
+  <p><a href="http://erlang.org/doc/tutorial/cnode.html">C nodes</a>,  
+are a way of implementing native binaries, written in C, that behave  
+like Erlang nodes, capable of sending and receiving messages from Erlang  
+processes. Amongst the ways of interfacing Erlang with C, C nodes are the  
+most robust: since the nodes are independent OS processes, crashes do not  
+affect the Erlang VM. Compare this to a NIF, for example, where a problem in  
+the C code may cause the entire Erlang VM to crash.</p>
+ 
+  <p>Making C nodes work with Erlang, however, is not a simple task. Your
+  executable is started by hand, and has to set up communications with an
+  existing Erlang process. Since the executable does not know where to connect
+  to in advance, the necessary parameters have to be given to it when the C
+  node is started, which is done by hand. Once all of that is done, the C node
+  enters a message loop, waiting for messages and replying to them. If the
+  computations it is performing take too long, the calling Erlang process may
+  infer that the C node is dead, and cut communications with it. This is
+  because Erlang will be sending <code>TICK</code> messages to the C node to keep the  
+connection alive. The only way around this is to make the C node have  
+separate threads to deal with user-generated messages and system-generated  
+messages. The list does go on.</p>
+ 
+  <p>This module, and its accompanying library, <code>libgen_c_server.a</code>, hide this
+  complexity and require the C node implementer to define only the equivalent
+  <code>gen_server</code> callbacks in C. Within these callbacks, the developer uses
+  the <code>ei</code> library to manipulate Erlang terms.</p>
+ 
+  <h3><a name="Writing_a_C_Node">Writing a C Node</a></h3>
+ 
+  <p>A C node is written by implementing the necessary callbacks, and linking
+  the executable against <code>libgen_c_server.a</code>, which defines <code>main()</code> for you.
+  When implementing callbacks, the rule of thumb is this: for each callback
+  you would implement in an Erlang <code>gen_server</code> callback module, implement a
+  <code>gcs_</code><em>name</em> function in C instead. This function takes in the same
+  arguments as the Erlang callback, plus a last <code>ei_x_buff*</code> argument where the
+  function should build its reply (when a reply is needed). The other
+  arguments are <code>const char*</code> pointing to <code>ei</code> buffers containing the  
+arguments themselves.</p>
+ 
+  A full C node skeleton thus looks like this:
+  <pre>  #include "gen_c_server.h"
+ 
+  void gcs_init(const char *args_buff, ei_x_buff *reply) {
+    /* IMPLEMENT ME */
+  }
+ 
+  void gcs_handle_call(const char *request_buff,
+                       const char *from_buff,
+                       const char *state_buff,
+                       ei_x_buff *reply) {
+    /* IMPLEMENT ME */
+  }
+ 
+  void gcs_handle_cast(const char *request_buff,
+                       const char *state_buff,
+                       ei_x_buff *reply) {
+    /* IMPLEMENT ME */
+  }
+ 
+  void gcs_handle_info(const char *info_buff,
+                       const char *state_buff,
+                       ei_x_buff *reply) {
+    /* IMPLEMENT ME */
+  }
+ 
+  void gcs_terminate(const char *reason_buff, const char *state_buff) {
+    /* IMPLEMENT ME */
+  }</pre>
+  Let's see how this looks like in a C node that simply counts the number
+  of calls made to each function. (You can also see the code in the source
+  distribution of <code>gen_c_server</code>, it is one of the tests.) In this C node,
+  We make use of an utility <code>gcs_decode</code> function which is provided by the
+  <code>gen_c_server</code> library, and allows us to decode <code>ei</code> buffers in a
+  <code>sscanf</code>-like manner. Consult the header file for more details.
+  <pre>  #include "gen_c_server.h"
+ 
+  /*
+   * Utility function that encodes a state tuple based on the arguments.
+   * The state is a 3-tuple, { num_calls, num_casts, num_infos }
+   */
+  static void encode_state(
+          ei_x_buff *reply,
+          long ncalls,
+          long ncasts,
+          long ninfos)
+  {
+      ei_x_encode_tuple_header(reply,3);
+      ei_x_encode_long(reply,ncalls);
+      ei_x_encode_long(reply,ncasts);
+      ei_x_encode_long(reply,ninfos);
+  }
+ 
+  /*
+   * Initialize the C node, replying with a zeroed-out state.
+   */
+  void gcs_init(const char* args_buff, ei_x_buff *reply)
+  {
+      /* Reply: {ok,{0,0,0}} */
+      ei_x_encode_tuple_header(reply,2);
+      ei_x_encode_atom(reply,"ok");
+      encode_state(reply,0,0,0);
+  }
+ 
+  /*
+   * When called, increment the number of calls, and reply with the new state.
+   */
+  void gcs_handle_call(
+          const char *request_buff,
+          const char *from_buff,
+          const char *state_buff,
+          ei_x_buff  *reply)
+  {
+      long ncalls, ncasts, ninfos;
+      gcs_decode(state_buff,(int*)0,"{lll}",3,&amp;ncalls,&amp;ncasts,&amp;ninfos);
+ 
+      /* Reply: {reply,Reply=NewState,NewState={ncalls+1,ncasts,ninfos}} */
+      ei_x_encode_tuple_header(reply,3);
+      ei_x_encode_atom(reply,"reply");
+      encode_state(reply,ncalls+1,ncasts,ninfos);
+      encode_state(reply,ncalls+1,ncasts,ninfos);
+  }
+ 
+  /*
+   * When casted, increment the number of casts, and reply with the new state.
+   */
+  void gcs_handle_cast(
+          const char *request_buff,
+          const char *state_buff,
+          ei_x_buff  *reply)
+  {
+      long ncalls, ncasts, ninfos;
+      gcs_decode(state_buff,(int*)0,"{lll}",3,&amp;ncalls,&amp;ncasts,&amp;ninfos);
+ 
+      /* Reply: {noreply,NewState={ncalls,ncasts+1,ninfos}} */
+      ei_x_encode_tuple_header(reply,2);
+      ei_x_encode_atom(reply,"noreply");
+      encode_state(reply,ncalls,ncasts+1,ninfos);
+  }
+ 
+  /*
+   * When info-ed, increment the number of infos, and reply with the new state.
+   */
+  void gcs_handle_info(
+          const char *info_buff,
+          const char *state_buff,
+          ei_x_buff  *reply)
+  {
+      long ncalls, ncasts, ninfos;
+      gcs_decode(state_buff,(int*)0,"{lll}",3,&amp;ncalls,&amp;ncasts,&amp;ninfos);
+ 
+      /* Reply: {noreply,NewState={ncalls,ncasts,ninfos+1}} */
+      ei_x_encode_tuple_header(reply,2);
+      ei_x_encode_atom(reply,"noreply");
+      encode_state(reply,ncalls,ncasts,ninfos+1);
+  }
+ 
+  /*
+   * We don't need to clean anything up when terminating.
+   */
+  void gcs_terminate(const char *reason_buff, const char *state_buff) { }</pre>
+ 
+  Once you compile (with the appropriate flags so the compiler finds
+  <code>gen_c_server.h</code> and <code>ei.h</code>) and link (with the appropriat flags to the
+  linker links in <code>libgen_c_server</code>, <code>erl_interface</code>, and <code>ei</code> libraries) this
+  node, you can use it from Erlang as follows:
+  <pre>  {ok,Pid} = gen_c_server:start("/path/to/my/c/node/executable",[],[]),
+  {1,0,0} = gen_c_server:call(Pid,"Any message"),
+  ok = gen_c_server:cast(Pid,"Any old message"),
+  {2,1,0} = gen_c_server:call(Pid,"Any message"),
+  Pid ! "Any message, really",
+  {3,1,1} = gen_c_server:call(Pid,[]),
+  gen_c_server:stop(Pid).</pre><p>
+  Note that the Erlang shell has to have a registered name, which means
+  you have to start it with either the <code>-name</code> or <code>-sname</code> options passed in.  
+This is because the C node needs a registered Erlang node to connect to.</p>
+ 
+  <h3><a name="Limitations">Limitations</a></h3>
+ 
+  <p>Currently, not all replies from the callback functions are accepted.  
+In particular,</p>
+ 
+  <ul>
+  <li> <code>gcs_handle_call</code> can only reply <code>{reply,Reply,NewState}</code>,
+       <code>{reply,Reply,NewState,hibernate}</code> or <code>{stop,Reason,Reply,NewState}</code>.
+  </li>
+  <li> <code>gcs_handle_cast</code> can only reply <code>{noreply,NewState}</code>,
+       <code>{noreply,NewState,hibernate}</code> or <code>{stop,Reason,NewState}</code>.
+  </li>
+  <li> <code>gcs_handle_info</code> can only reply <code>{noreply,NewState}</code>,
+       <code>{noreply,NewState,hibernate}</code> or <code>{stop,Reason,NewState}</code>.
+  </li>
+  </ul>
+ 
+<h2><a name="index">Function Index</a></h2>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#call-2">call/2</a></td><td>Equivalent to <a href="#call-3"><tt>call(ServerRef, Request, 5000)</tt></a>.
+</td></tr>
+<tr><td valign="top"><a href="#call-3">call/3</a></td><td>Make a synchronous call.</td></tr>
+<tr><td valign="top"><a href="#cast-2">cast/2</a></td><td>Make an asynchronous call.</td></tr>
+<tr><td valign="top"><a href="#start-3">start/3</a></td><td>Create a stand-alone C node server process.</td></tr>
+<tr><td valign="top"><a href="#start_link-3">start_link/3</a></td><td>Create a stand-alone C node server process as a part of a supervision  
+tree.</td></tr>
+<tr><td valign="top"><a href="#stop-1">stop/1</a></td><td></td></tr>
+</table>
+
+<h2><a name="functions">Function Details</a></h2>
+
+<h3 class="function"><a name="call-2">call/2</a></h3>
+<div class="spec">
+<p><tt>call(ServerRef, Request) -&gt; any()</tt></p>
+</div><p>Equivalent to <a href="#call-3"><tt>call(ServerRef, Request, 5000)</tt></a>.</p>
+
+
+<h3 class="function"><a name="call-3">call/3</a></h3>
+<div class="spec">
+<p><tt>call(ServerRef, Request, Timeout) -&gt; any()</tt></p>
+</div><p><p>Make a synchronous call.</p>
+ 
+  <p>The only difference between this function and <code>gen_server:call/3</code> is that
+  the callback function should be implemented by a <code>gcs_handle_call</code> function
+  in the C node see <a href="#Writing_a_C_node">Writing a C node</a>, above, for details).</p>
+ 
+  See <a href="http://erlang.org/doc/man/gen_server.html#call-3">
+  <code>gen_server:call/3</code></a> for a complete description of arguments
+  and return values.</p>
+
+<h3 class="function"><a name="cast-2">cast/2</a></h3>
+<div class="spec">
+<p><tt>cast(ServerRef, Request) -&gt; any()</tt></p>
+</div><p><p>Make an asynchronous call.</p>
+ 
+  <p>The only difference between this function and <code>gen_server:cast/2</code> is that
+  the callback function should be implemented by a <code>gcs_handle_cast</code> function
+  in the C node see <a href="#Writing_a_C_node">Writing a C node</a>, above, for details).</p>
+ 
+  See <a href="http://erlang.org/doc/man/gen_server.html#cast-2">
+  <code>gen_server:cast/2</code></a> for a complete description of arguments
+  and return values.</p>
+
+<h3 class="function"><a name="start-3">start/3</a></h3>
+<div class="spec">
+<p><tt>start(CNode, Args, Options) -&gt; any()</tt></p>
+</div><p><p>Create a stand-alone C node server process.  
+A stand-alone server process is one which is not a part of a supervision  
+tree, and thus has no supervisor.</p>
+ 
+  See <a href="#start_link-3"><code>start_link/3</code></a>
+  for a description of arguments and return values.
+ </p>
+
+<h3 class="function"><a name="start_link-3">start_link/3</a></h3>
+<div class="spec">
+<p><tt>start_link(CNode, Args, Options) -&gt; any()</tt></p>
+</div><p><p>Create a stand-alone C node server process as a part of a supervision  
+tree. The function should be called, directly or indirectly, by the  
+supervisor. It will, among other things, ensure that the gen_server is  
+linked to the supervisor.</p>
+ 
+  <p>There are only two differences between this function and
+  <code>gen_server:start_link/3</code>:</p>
+ 
+  <ul>
+  <li>
+    The first argument, <code>CNode</code>, is a string containing the name of the C node
+    executable (instead of <code>gen_server</code>'s <code>Module</code> argument). If it is not a
+    fully qualified path, the executable should be in some directory in
+    <code>$PATH</code>.
+  </li>
+  <li>
+    The <code>init</code> function that is usually called by <code>gen_server:start_link</code>
+    should be a C function <code>gcs_init</code> implemented in the C node (see
+    <a href="#Writing_a_C_node">Writing a C node</a>, above, for details).
+  </li>
+  </ul>
+ 
+  See <a href="http://erlang.org/doc/man/gen_server.html#start_link-3">
+  <code>gen_server:start_link/3</code></a> for a complete description of other arguments
+  and return values.
+ </p>
+
+<h3 class="function"><a name="stop-1">stop/1</a></h3>
+<div class="spec">
+<p><tt>stop(ServerRef) -&gt; any()</tt></p>
+</div>
+<hr>
+
+<div class="navbar"><a name="#navbar_bottom"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>
+<p><i>Generated by EDoc, Apr 23 2016, 18:55:09.</i></p>
+</body>
+</html>
