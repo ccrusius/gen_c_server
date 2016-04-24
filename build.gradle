@@ -168,6 +168,11 @@ model {
     all {
       cCompiler.args "-I$eiInclude", "-D_REENTRANT"
       linker.args "-L$eiLib", "-lerl_interface", "-lei"
+
+      if (targetPlatform.operatingSystem.linux) {
+        cCompiler.args '-pthread'
+        linker.args '-pthread'
+      }
     }
   }
   components {
