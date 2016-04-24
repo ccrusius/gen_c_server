@@ -1,0 +1,5 @@
+language: erlang
+notifications:
+  email: cesar.crusius@stanfordalumni.org
+otp_release:
+  - 17.5
