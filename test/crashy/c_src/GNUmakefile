@@ -35,7 +35,9 @@ CFLAGS += -I ../../../include -D_REENTRANT
 libgen_c_server := $(CURDIR)/../../../lib/libgen_c_server.a
 LDLIBS += -L $(CURDIR)/../../../lib -lgen_c_server
 LDLIBS += -L $(ERL_INTERFACE_LIB_DIR) -lerl_interface -lei
-# Rebar's original: LDFLAGS += -shared
+ifeq ($(UNAME_SYS), Linux)
+	LDLIBS += -lpthread
+endif
 
 # Verbosity.
 
