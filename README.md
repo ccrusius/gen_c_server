@@ -3,7 +3,9 @@
 # Erlang Generic C Node Server
 
 A library that ties together Erlang's `gen_server` with Erlang's C nodes.
-For more details, consult the documentation, which is checked in for
+For more details, consult the
+[documentation](http://htmlpreview.github.io/?https://github.com/ccrusius/gen_c_server/blob/master/doc/index.html),
+which is checked in for
 convenience.
 
 Inspired by Robby Raschke's work on
