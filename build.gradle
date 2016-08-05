@@ -1,4 +1,5 @@
 apply plugin: 'c'
+apply plugin: org.erlang.gradle.ErlangPlugin
 
 //==============================================================================
 //
@@ -24,30 +25,14 @@ task(install)
 // Erlang
 //
 //==============================================================================
-def erl(Cmd) {
-    def stdout = new ByteArrayOutputStream()
-    exec {
-        commandLine 'erl', '-noshell', '-s', 'init', 'stop', '-eval', Cmd
-        standardOutput = stdout
-    }
-    return stdout.toString().trim()
-}
-
 ext {
-    eiInclude = erl('io:format("~s", [code:lib_dir(erl_interface, include)]).')
-    eiLib     = erl('io:format("~s", [code:lib_dir(erl_interface, lib)]).')
+    eiInclude = erlang.eval('io:format("~s", [code:lib_dir(erl_interface, include)]).')
+    eiLib     = erlang.eval('io:format("~s", [code:lib_dir(erl_interface, lib)]).')
 }
 
-task erlc {
-  ext.destDir = new File("$rootDir/build/install/lib/gen_c_server/ebin")
-  inputs.file "src/gen_c_server.erl"
-  outputs.file "$destDir/gen_c_server.beam"
-  doLast {
-    destDir.mkdirs()
-    exec {
-      commandLine 'erlc', '-o', "$destDir/", 'src/gen_c_server.erl'
-    }
-  }
+task erlc(type: org.erlang.gradle.ErlcTask) {
+  setSourceFile 'src/gen_c_server.erl'
+  setOutputDir "$rootDir/build/install/lib/gen_c_server/ebin"
 }
 
 install.dependsOn erlc
@@ -101,7 +86,7 @@ task edoc {
   doLast {
     def destDir = "{dir,\"$rootDir/doc\"}"
     def srcDir = "\"$rootDir/src\""
-    erl("edoc:application(gen_c_server,$srcDir,[$destDir]).")
+    erlang.eval("edoc:application(gen_c_server,$srcDir,[$destDir]).")
   }
 }
 
