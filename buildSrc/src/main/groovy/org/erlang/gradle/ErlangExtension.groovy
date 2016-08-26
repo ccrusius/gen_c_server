@@ -14,6 +14,8 @@ class ErlangExtension {
 
   String erlc = "erlc"
 
+  String escript = "escript"
+
   ErlangExtension(Project project) {
     this.project = project
   }
@@ -22,12 +24,31 @@ class ErlangExtension {
     def cmdline = [
       this.erl, '-noshell', '-s', 'init', 'stop', '-eval', command
     ]
+    //
+    // I could not make the standard 'erl -noshell' command work on
+    // Windows. The most reliable "solution" so far has been to use
+    // 'escript' on a temporary file.
+    //
+    def isWindows = org.gradle.internal.os.OperatingSystem.current().isWindows()
+    if(isWindows) {
+      File script = File.createTempFile("temp",".erl")
+      script.with {
+        deleteOnExit()
+        write("%% -*- erlang -*-\nmain(_) ->\n" + command)
+      }
+      cmdline = [ this.escript, script.absolutePath ]
+    }
+    //
+    // Back to semi-normalcy
+    //
     project.logger.debug(cmdline.join(' '))
     def process = new ProcessBuilder(cmdline).start()
     process.waitFor()
     if(process.exitValue() != 0) {
       throw new GradleException('erl failed.')
     }
-    return process.text.toString().trim()
+    def result = process.text.toString().trim()
+    project.logger.debug("ErlangExtension::eval(" + command + ")=" + result)
+    return result
   }
 }

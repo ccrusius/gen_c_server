@@ -28,7 +28,9 @@ init_per_suite(Config) ->
     Config.
 
 init_per_testcase(_TestCase, Config) ->
-    CNode = filename:join([os:getenv("ROOT_DIR"),"build","cnodes","reply_this"]),
+    CNode = filename:join([os:getenv("ROOT_DIR"),
+                           "build","install","reply_this","lib",
+                           "reply_this"]),
     [ {cnode, CNode} | Config ].
 
 end_per_testcase(_TestCase, _Config) ->

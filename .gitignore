@@ -1,5 +1,6 @@
 build
 priv
+pthreads-win32
 .gradle
 
 *.o

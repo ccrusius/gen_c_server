@@ -1,3 +1,8 @@
+/** Gradle Erlang plugin.
+
+    Basic structure inspired by the asciidoctor Gradle plugin.
+*/
+
 package org.erlang.gradle
 
 import org.gradle.api.Plugin

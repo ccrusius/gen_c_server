@@ -34,7 +34,9 @@ init_per_suite(Config) ->
     Config.
 
 init_per_testcase(_TestCase, Config) ->
-    CNode = filename:join([os:getenv("ROOT_DIR"),"build","cnodes","call_counter"]),
+    CNode = filename:join([os:getenv("ROOT_DIR"),
+                           "build","install","call_counter","lib",
+                           "call_counter"]),
     [ {cnode, CNode} | Config ].
 
 end_per_testcase(_TestCase, _Config) ->

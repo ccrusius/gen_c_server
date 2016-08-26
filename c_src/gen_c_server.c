@@ -20,14 +20,12 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
-#include <stdbool.h>
 #include <string.h>
 #include <pthread.h>
 
 #include "gen_c_server.h"
 
 #include "erl_interface.h"
-extern int ei_tracelevel;
 
 /*==============================================================================
  *
@@ -192,17 +190,17 @@ static void _vprint(const char* prefix, const char* fmt, va_list args)
     va_list args; va_start(args,fmt); _vprint(prefix,fmt,args); va_end(args);
 
 static void info_print(const char *fmt,...)    {
-    if (ei_tracelevel > 0) { C_NODE_PRINT("<INFO> "); }
+    if (ei_get_tracelevel() > 0) { C_NODE_PRINT("<INFO> "); }
 }
 //static void warning_print(const char *fmt,...) { C_NODE_PRINT("<WARN>"); }
 static void error_print(const char *fmt,...)   { C_NODE_PRINT("<ERROR>"); }
 
 static void debug_print(const char *fmt,...) {
-    if (ei_tracelevel > 2) { C_NODE_PRINT("<INFO>[DEBUG] "); }
+    if (ei_get_tracelevel() > 2) { C_NODE_PRINT("<INFO>[DEBUG] "); }
 }
 
 static void trace_print(const char *fmt,...) {
-    if (ei_tracelevel > 3) { C_NODE_PRINT("<INFO>[TRACE] "); }
+    if (ei_get_tracelevel() > 3) { C_NODE_PRINT("<INFO>[TRACE] "); }
 }
 
 /*==============================================================================
@@ -231,17 +229,30 @@ int main(int argc, char *argv[])
 
     erl_init(NULL,0);
 
-    struct c_node_state *state = malloc(sizeof *state);
+    struct c_node_state *state = (struct c_node_state*)malloc(sizeof *state);
 
     state->c_node_name          = strdup(argv[1]);
     state->c_node_hostname      = strdup(argv[2]);
     state->erlang_node_fullname = strdup(argv[3]);
     state->erlang_node_cookie   = strdup(argv[4]);
-    ei_tracelevel = atoi(argv[5]);
+    ei_set_tracelevel(atoi(argv[5]));
+
+#   ifdef _WIN32
+    /* Without this, gethostbyname() does not work on Windows... */
+    WSAData wsdata;
+    WSAStartup(WINSOCK_VERSION, &wsdata);
+    /* Without this, Windows pops up the annoying crash dialog box,
+       making automated tests impossible. */
+    SetErrorMode(SetErrorMode(0) | SEM_NOGPFAULTERRORBOX);
+#   endif
 
     _connect(state);
 
     _main_message_loop(state);
+
+#   ifdef _WIN32
+    WSACleanup();
+#   endif
 
     info_print("C node stopped.");
 
@@ -256,8 +267,9 @@ _connect(struct c_node_state *state)
     struct hostent *host;
 
     if ((host = gethostbyname(state->c_node_hostname)) == NULL) {
-        error_print("Can not resolve host information for %s."
-              ,state->c_node_hostname);
+        error_print("Can not resolve host information for %s. (%d)"
+                    ,state->c_node_hostname
+                    ,h_errno);
         exit(3);
     }
 
@@ -563,7 +575,7 @@ _execution_loop(void *arg)
  *
  *============================================================================*/
 static const char *C_NODE_READY_MSG = ".-. . .- -.. -.--"; /* Morse for "ready". */
-static bool _process_gen_call(const char*, ei_x_buff*);
+static int _process_gen_call(const char*, ei_x_buff*);
 
 static void
 _main_message_loop(struct c_node_state *state)
@@ -636,7 +648,7 @@ _main_message_loop(struct c_node_state *state)
                                 waiting_for_exit = 1;
 
                             /* Deep copy message. */
-                            struct message* new_message = malloc(sizeof *new_message);
+                            struct message* new_message = (struct message*)malloc(sizeof *new_message);
                             message_new(new_message);
                             erlang_msg_dup(&msg,&new_message->msg);
                             ei_x_buff_dup(&msg_buffer,&new_message->input);
@@ -683,7 +695,7 @@ _main_message_loop(struct c_node_state *state)
     pthread_join(execution_thread,NULL); // Should have finished already.
 }
 
-static bool
+static int
 _process_gen_call(const char* gen_call_msg, ei_x_buff* reply)
 {
     int         ndecoded;
@@ -700,7 +712,7 @@ _process_gen_call(const char* gen_call_msg, ei_x_buff* reply)
             &ref,            /* reference */
             &msg);           /* message */
 
-    if (ndecoded != 9) return false;
+    if (ndecoded != 9) return 0;
 
     reply->index = 0;
 
@@ -713,7 +725,7 @@ _process_gen_call(const char* gen_call_msg, ei_x_buff* reply)
         ei_x_encode_tuple_header(reply,2);
         ei_x_encode_ref(reply,&ref);
         ei_x_encode_atom(reply,"yes");
-        return true;
+        return 1;
     }
 
     /* A '$gen_call' we don't understand. */
@@ -726,5 +738,5 @@ _process_gen_call(const char* gen_call_msg, ei_x_buff* reply)
     free(err_buff);
     exit(9);
 
-    return false;
+    return 0;
 }

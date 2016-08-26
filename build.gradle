@@ -1,7 +1,7 @@
 apply plugin: 'c'
 apply plugin: org.erlang.gradle.ErlangPlugin
 
-//==============================================================================
+//=============================================================================
 //
 // Why not rebar?
 //
@@ -9,22 +9,23 @@ apply plugin: org.erlang.gradle.ErlangPlugin
 // it is not flexible enough. The C compilation support, for example, is not
 // really there. I need something that works on SmartOS (Solaris), Windows, Mac,
 // and Linux. My options are Gradle, CMake, and Shake, and Gradle is the one
-// that made all the integrations I needed the least painful.
+// that made all the integrations I needed the least painful. (Bazel
+// is currently not an option because of its lack of Windows support.)
 //
-//==============================================================================
+//=============================================================================
 
-//==============================================================================
+//=============================================================================
 //
 // Empty tasks to be extended as we go.
 //
-//==============================================================================
+//=============================================================================
 task(install)
 
-//==============================================================================
+//=============================================================================
 //
 // Erlang
 //
-//==============================================================================
+//=============================================================================
 ext {
     eiInclude = erlang.eval('io:format("~s", [code:lib_dir(erl_interface, include)]).')
     eiLib     = erlang.eval('io:format("~s", [code:lib_dir(erl_interface, lib)]).')
@@ -37,11 +38,11 @@ task erlc(type: org.erlang.gradle.ErlcTask) {
 
 install.dependsOn erlc
 
-//==============================================================================
+//=============================================================================
 //
 // Erlang app files
 //
-//==============================================================================
+//=============================================================================
 task install_app(type: Copy) {
   from 'src'
   into "$rootDir/build/install/lib/gen_c_server/ebin"
@@ -51,11 +52,11 @@ task install_app(type: Copy) {
 
 install.dependsOn install_app
 
-//==============================================================================
+//=============================================================================
 //
 // Sources
 //
-//==============================================================================
+//=============================================================================
 task install_src(type: Copy) {
   from 'src'
   into "$rootDir/build/install/lib/gen_c_server/src"
@@ -64,11 +65,11 @@ task install_src(type: Copy) {
 
 install.dependsOn install_src
 
-//==============================================================================
+//=============================================================================
 //
 // Includes
 //
-//==============================================================================
+//=============================================================================
 task install_include(type: Copy) {
   from 'include'
   into "$rootDir/build/install/lib/gen_c_server/include"
@@ -77,11 +78,11 @@ task install_include(type: Copy) {
 
 install.dependsOn install_include
 
-//==============================================================================
+//=============================================================================
 //
 // Documentation
 //
-//==============================================================================
+//=============================================================================
 task edoc {
   doLast {
     def destDir = "{dir,\"$rootDir/doc\"}"
@@ -98,11 +99,11 @@ task install_edoc(type: Copy, dependsOn: edoc) {
 
 install.dependsOn install_edoc
 
-//==============================================================================
+//=============================================================================
 //
 // Testing
 //
-//==============================================================================
+//=============================================================================
 task ct {
   dependsOn install
   ext.destDir = new File("$rootDir/build/test")
@@ -121,11 +122,11 @@ task ct {
   }
 }
 
-//==============================================================================
+//=============================================================================
 //
 // Erlang shell
 //
-//==============================================================================
+//=============================================================================
 task shell {
   dependsOn install
   doLast {
@@ -143,16 +144,78 @@ task shell {
   }
 }
 
-//==============================================================================
+//=============================================================================
 //
 // C
 //
-//==============================================================================
+// Windows support needs some work. At this stage, some paths are
+// hardcoded (winsock library directory), and the executables are
+// compiled in 32-bit mode (at least with Visual Studio 2012), with a
+// corresponding hardcoded path given here for the pthread library.
+//
+//=============================================================================
 model {
+  repositories {
+    libs(PrebuiltLibraries) {
+      ei {
+        headers.srcDir "$eiInclude"
+        binaries.withType(StaticLibraryBinary) { binary ->
+          if (binary.targetPlatform.operatingSystem.windows) {
+            staticLibraryFile = file("$eiLib\\ei.lib")
+          }
+          if (binary.targetPlatform.operatingSystem.linux ||
+              binary.targetPlatform.operatingSystem.macOsX) {
+            staticLibraryFile = file("$eiLib/libei.a")
+          }
+        }
+      }
+      erl_interface {
+        headers.srcDir "$eiInclude"
+        binaries.withType(StaticLibraryBinary) { binary ->
+          if (binary.targetPlatform.operatingSystem.windows) {
+            staticLibraryFile = file("$eiLib\\erl_interface.lib")
+          }
+          if (binary.targetPlatform.operatingSystem.linux ||
+              binary.targetPlatform.operatingSystem.macOsX) {
+            staticLibraryFile = file("$eiLib/liberl_interface.a")
+          }
+        }
+      }
+      pthread {
+        binaries.withType(SharedLibraryBinary) { binary ->
+          if (binary.targetPlatform.operatingSystem.windows) {
+            def baseDir = "$rootDir\\pthreads-win32\\Pre-built.2"
+            headers.srcDir "$baseDir\\include"
+            sharedLibraryFile = file("$baseDir\\dll\\x86\\pthreadVC2.dll")
+            sharedLibraryLinkFile = file("$baseDir\\lib\\x86\\pthreadVC2.lib")
+          }
+        }
+      }
+      winsock {
+        binaries.withType(StaticLibraryBinary) { binary ->
+          if (binary.targetPlatform.operatingSystem.windows) {
+            def baseDir = "C:\\Program Files (x86)\\Windows Kits\\8.0\\Lib\\win8\\um\\x86"
+            staticLibraryFile = file("$baseDir\\ws2_32.lib")
+          }
+        }
+      }
+    }
+  }
   binaries {
     all {
-      cCompiler.args "-I$eiInclude", "-D_REENTRANT"
-      linker.args "-L$eiLib", "-lerl_interface", "-lei"
+      cCompiler.define "_REENTRANT"
+
+      lib library: 'erl_interface', linkage: 'static'
+      lib library: 'ei', linkage: 'static'
+
+      if (toolChain in VisualCpp) {
+        // MSVC defines '_WIN32', but Erlang includes rely on '__WIN32__'
+        cCompiler.define "__WIN32__"
+        cCompiler.args "/TP"
+        linker.args "/SUBSYSTEM:CONSOLE"
+        lib library: 'winsock', linkage: 'static'
+        lib library: 'pthread', linkage: 'shared'
+      }
 
       if (targetPlatform.operatingSystem.linux) {
         cCompiler.args '-pthread'
@@ -161,11 +224,11 @@ model {
     }
   }
   components {
-    //==========================================================================
+    //=========================================================================
     //
     // gen_c_server native library
     //
-    //==========================================================================
+    //=========================================================================
     gen_c_server(NativeLibrarySpec) {
       binaries.withType(SharedLibraryBinarySpec) {
         buildable = false
@@ -191,16 +254,11 @@ model {
         }
       }
     }
-    //==========================================================================
+    //=========================================================================
     //
     // Test C nodes
     //
-    //==========================================================================
-    def test_src = fileTree(dir: "$rootDir/test", include: '**/c_src/*.c')
-
-    test_src.each { src ->
-    }
-
+    //=========================================================================
     call_counter(NativeExecutableSpec) {
       sources.c {
         source {
@@ -213,7 +271,6 @@ model {
       }
       binaries.all {
         lib library: 'gen_c_server', linkage: 'static'
-        linker.args "-L$eiLib", "-lerl_interface", "-lei"
       }
     }
     crashy(NativeExecutableSpec) {
@@ -228,7 +285,6 @@ model {
       }
       binaries.all {
         lib library: 'gen_c_server', linkage: 'static'
-        linker.args "-L$eiLib", "-lerl_interface", "-lei"
       }
     }
     reply_this(NativeExecutableSpec) {
@@ -243,21 +299,19 @@ model {
       }
       binaries.all {
         lib library: 'gen_c_server', linkage: 'static'
-        linker.args "-L$eiLib", "-lerl_interface", "-lei"
-      }
-    }
-  }
-  binaries {
-    withType(NativeExecutableBinarySpec) { bin ->
-      bin.tasks.withType(LinkExecutable) { linkTask ->
-        linkTask << {
-          copy {
-            from outputFile
-            into file("$rootDir/build/cnodes/")
-          }
-        }
-        install.dependsOn linkTask
       }
     }
   }
 }
+
+//
+// For each executable, gradle defines a task called
+// install${binary.name}Executable, which will create a suitable
+// installation that includes all the library dependencies.
+// This installation will have a shell script placed at
+// ${project.buildDir}/install/${binary.name}/${binary.name}
+// (with a .bat extension on Windows).
+//
+install.dependsOn 'installCall_counterExecutable'
+install.dependsOn 'installCrashyExecutable'
+install.dependsOn 'installReply_thisExecutable'
