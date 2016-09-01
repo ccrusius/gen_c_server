@@ -22,7 +22,7 @@
 %%
 %% @doc A `gen_server' for C nodes.
 %%
-%% <a href="http://erlang.org/doc/tutorial/cnode.html">C nodes</a>,
+%% <a href="http://erlang.org/doc/tutorial/cnode.html">C nodes</a>
 %% are a way of implementing native binaries, written in C, that behave
 %% like Erlang nodes, capable of sending and receiving messages from Erlang
 %% processes. Amongst the ways of interfacing Erlang with C, C nodes are the
@@ -33,8 +33,9 @@
 %% Making C nodes work with Erlang, however, is not a simple task. Your
 %% executable is started by hand, and has to set up communications with an
 %% existing Erlang process. Since the executable does not know where to connect
-%% to in advance, the necessary parameters have to be given to it when the C
-%% node is started, which is done by hand. Once all of that is done, the C node
+%% to in advance, the necessary parameters have to be given to it in the
+%% command line  when the C node is started.
+%% Once all of that is done, the C node
 %% enters a message loop, waiting for messages and replying to them. If the
 %% computations it is performing take too long, the calling Erlang process may
 %% infer that the C node is dead, and cut communications with it. This is
@@ -92,10 +93,10 @@
 %% }
 %% '''
 %% Let's see how this looks like in a C node that simply counts the number
-%% of calls made to each function. (You can also see the code in the source
-%% distribution of `gen_c_server', it is one of the tests.) In this C node,
+%% of calls made to each function. (This C node is included in the source
+%% distribution of `gen_c_server', as one of the tests.) In this C node,
 %% We make use of an utility `gcs_decode' function which is provided by the
-%% `gen_c_server' library, and allows us to decode `ei' buffers in a
+%% `gen_c_server' library, that allows us to decode `ei' buffers in a
 %% `sscanf'-like manner. Consult the header file for more details.
 %% ```
 %% #include "gen_c_server.h"
@@ -187,7 +188,7 @@
 %% '''
 %%
 %% Once you compile (with the appropriate flags so the compiler finds
-%% `gen_c_server.h' and `ei.h') and link (with the appropriat flags to the
+%% `gen_c_server.h' and `ei.h') and link (with the appropriate flags to the
 %% linker links in `libgen_c_server', `erl_interface', and `ei' libraries) this
 %% node, you can use it from Erlang as follows:
 %% ```
