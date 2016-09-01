@@ -85,8 +85,9 @@ install.dependsOn install_include
 //=============================================================================
 task edoc {
   doLast {
-    def destDir = "{dir,\"$rootDir/doc\"}"
-    def srcDir = "\"$rootDir/src\""
+    def unixRoot = rootDir.toString().replaceAll("\\\\","/")
+    def destDir = "{dir,\"$unixRoot/doc\"}"
+    def srcDir = "\"$unixRoot/src\""
     erlang.eval("edoc:application(gen_c_server,$srcDir,[$destDir]).")
   }
 }
@@ -148,13 +149,13 @@ task shell {
 //
 // C
 //
-// Windows support needs some work. At this stage, some paths are
-// hardcoded (winsock library directory), and the executables are
-// compiled in 32-bit mode (at least with Visual Studio 2012), with a
-// corresponding hardcoded path given here for the pthread library.
-//
 //=============================================================================
 model {
+
+  platforms {
+    x64 { architecture 'x86_64' }
+  }
+
   repositories {
     libs(PrebuiltLibraries) {
       ei {
@@ -183,24 +184,28 @@ model {
       }
       pthread {
         binaries.withType(SharedLibraryBinary) { binary ->
-          if (binary.targetPlatform.operatingSystem.windows) {
+          def p = binary.targetPlatform
+          if (p.operatingSystem.windows) {
             def baseDir = "$rootDir\\pthreads-win32\\Pre-built.2"
             headers.srcDir "$baseDir\\include"
-            sharedLibraryFile = file("$baseDir\\dll\\x86\\pthreadVC2.dll")
-            sharedLibraryLinkFile = file("$baseDir\\lib\\x86\\pthreadVC2.lib")
+            sharedLibraryFile = file("$baseDir\\dll\\$p.name\\pthreadVC2.dll")
+            sharedLibraryLinkFile = file("$baseDir\\lib\\$p.name\\pthreadVC2.lib")
           }
         }
       }
       winsock {
         binaries.withType(StaticLibraryBinary) { binary ->
-          if (binary.targetPlatform.operatingSystem.windows) {
-            def baseDir = "C:\\Program Files (x86)\\Windows Kits\\8.0\\Lib\\win8\\um\\x86"
-            staticLibraryFile = file("$baseDir\\ws2_32.lib")
+          def p = binary.targetPlatform
+          if (p.operatingSystem.windows) {
+            // TODO: Find ws2_32 instead of hardcoding the path
+            def baseDir = "C:\\Program Files (x86)\\Windows Kits\\8.0\\Lib\\win8\\um"
+            staticLibraryFile = file("$baseDir\\$p.name\\ws2_32.lib")
           }
         }
       }
     }
   }
+
   binaries {
     all {
       cCompiler.define "_REENTRANT"
@@ -221,8 +226,11 @@ model {
         cCompiler.args '-pthread'
         linker.args '-pthread'
       }
+
+      //println 'configuring variant: ' + name + '.' + targetPlatform.name + '.' + buildType.name
     }
   }
+
   components {
     //=========================================================================
     //
@@ -230,6 +238,7 @@ model {
     //
     //=========================================================================
     gen_c_server(NativeLibrarySpec) {
+      targetPlatform 'x64'
       binaries.withType(SharedLibraryBinarySpec) {
         buildable = false
       }
@@ -260,6 +269,7 @@ model {
     //
     //=========================================================================
     call_counter(NativeExecutableSpec) {
+      targetPlatform 'x64'
       sources.c {
         source {
           srcDir  "test/call_counter/c_src"
@@ -274,6 +284,7 @@ model {
       }
     }
     crashy(NativeExecutableSpec) {
+      targetPlatform 'x64'
       sources.c {
         source {
           srcDir  "test/crashy/c_src"
@@ -288,6 +299,7 @@ model {
       }
     }
     reply_this(NativeExecutableSpec) {
+      targetPlatform 'x64'
       sources.c {
         source {
           srcDir  "test/reply_this/c_src"
