@@ -1,5 +1,8 @@
+plugins {
+  id "org.ccrusius.erlang" version "1.0.0"
+}
+
 apply plugin: 'c'
-apply plugin: org.erlang.gradle.ErlangPlugin
 
 //=============================================================================
 //
@@ -31,7 +34,7 @@ ext {
     eiLib     = erlang.eval('io:format("~s", [code:lib_dir(erl_interface, lib)]).')
 }
 
-task erlc(type: org.erlang.gradle.ErlcTask) {
+task erlc(type: org.ccrusius.erlang.Erlc) {
   setSourceFile 'src/gen_c_server.erl'
   setOutputDir "$rootDir/build/install/lib/gen_c_server/ebin"
 }
