@@ -3,9 +3,5 @@ notifications:
   email: cesar.crusius@stanfordalumni.org
 otp_release:
   - 17.5
-addons:
-  apt:
-    packages:
-      - oracle-java8-installer
 script:
   - ./gradlew --info install
