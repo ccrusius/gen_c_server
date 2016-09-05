@@ -4,4 +4,5 @@ notifications:
 otp_release:
   - 17.5
 script:
+  - jdk_switcher use oraclejdk8
   - ./gradlew --info install
