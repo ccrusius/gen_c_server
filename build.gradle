@@ -1,5 +1,5 @@
 plugins {
-  id "org.ccrusius.erlang" version "1.0.11"
+  id "org.ccrusius.erlang" version "1.1.1"
 }
 
 apply plugin: 'c'
@@ -34,26 +34,7 @@ ext {
     eiLib     = erlang.eval('io:format("~s", [code:lib_dir(erl_interface, lib)]).')
 }
 
-task erlc(type: org.ccrusius.erlang.Erlc) {
-  setSourceFile 'src/gen_c_server.erl'
-  setOutputDir "$rootDir/build/install/lib/gen_c_server/ebin"
-}
-
-install.dependsOn erlc
-
-//=============================================================================
-//
-// Erlang app files
-//
-//=============================================================================
-task install_app(type: Copy) {
-  from 'src'
-  into "$rootDir/build/install/lib/gen_c_server/ebin"
-  include '**/*.app.src'
-  rename '\\.src$', ''
-}
-
-install.dependsOn install_app
+install.dependsOn ebuild
 
 //=============================================================================
 //
@@ -62,7 +43,7 @@ install.dependsOn install_app
 //=============================================================================
 task install_src(type: Copy) {
   from 'src'
-  into "$rootDir/build/install/lib/gen_c_server/src"
+  into "$ebuildAppDir/src"
   include '**/*.erl'
 }
 
@@ -75,7 +56,7 @@ install.dependsOn install_src
 //=============================================================================
 task install_include(type: Copy) {
   from 'include'
-  into "$rootDir/build/install/lib/gen_c_server/include"
+  into "$ebuildAppDir/include"
   include '**/*.h'
 }
 
@@ -97,7 +78,7 @@ task edoc {
 
 task install_edoc(type: Copy, dependsOn: edoc) {
   from 'doc'
-  into "$rootDir/build/install/lib/gen_c_server/doc"
+  into "$ebuildAppDir/doc"
   include '**/*'
 }
 
@@ -116,7 +97,7 @@ task ct {
     destDir.mkdirs()
     exec {
       executable 'ct_run'
-      args '-pa', "$rootDir/build/install/lib/gen_c_server/ebin"
+      args '-pa', "$ebuildAppDir/ebin"
       args '-logdir', "$destDir"
       args '-suite'
       args suites
@@ -134,7 +115,7 @@ task ct {
 task shell {
   dependsOn install
   doLast {
-    def command = [ 'erl', '-name', 'gradle', '-pa', "$rootDir/build/install" ]
+    def command = [ 'erl', '-name', 'gradle', '-pa', "$ebuildAppDir/ebin" ]
     def proc = new ProcessBuilder((String[])command)
         .redirectOutput(ProcessBuilder.Redirect.INHERIT)
         .redirectInput(ProcessBuilder.Redirect.INHERIT)
@@ -259,7 +240,7 @@ model {
           linkTask << {
             copy {
               from lib.staticLibraryFile
-              into file("$rootDir/build/install/lib/gen_c_server/lib/")
+              into file("$ebuildAppDir/lib/")
             }
           }
           install.dependsOn lib
