@@ -15,6 +15,8 @@
          abort_in_info/1
         ]).
 
+-export([ c_node/0, init/2, terminate/2, handle_info/2 ]).
+
 all() -> [
           start_then_stop,
           crash_in_call,
@@ -28,6 +30,25 @@ all() -> [
           abort_in_info
          ].
 
+%%%============================================================================
+%%%
+%%% gen_c_server callbacks
+%%%
+%%%============================================================================
+c_node() ->
+    filename:join([os:getenv("ROOT_DIR"),
+                   "build","install","crashy","lib",
+                   "crashy"]).
+
+init(Args, Opaque) ->
+    gen_c_server:c_init(Args, Opaque).
+
+terminate(Reason, ServerState) ->
+    gen_c_server:c_terminate(Reason, ServerState).
+
+handle_info(Info, ServerState) ->
+    gen_c_server:c_handle_info(Info, ServerState).
+
 %%==============================================================================
 %%
 %% SETUP AND TEARDOWN
@@ -37,74 +58,69 @@ init_per_suite(Config) ->
     net_kernel:start([ct,longnames]),
     Config.
 
-init_per_testcase(_TestCase, Config) ->
-    CNode = filename:join([os:getenv("ROOT_DIR"),
-                           "build","install","crashy","lib",
-                           "crashy"]),
-    [ {cnode, CNode} | Config ].
+init_per_testcase(_TestCase, Config) -> Config.
 
-end_per_testcase(_TestCase, _Config) ->
-    ok.
+end_per_testcase(_TestCase, _Config) -> ok.
 
 %%==============================================================================
 %%
 %% TESTS
 %%
 %%==============================================================================
-start_then_stop(Config) ->
-    {ok, Pid} = gen_c_server:start(?config(cnode,Config),[],[{tracelevel,0}]),
+start_then_stop(_Config) ->
+    {ok, Pid} = gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
     gen_c_server:stop(Pid).
 
-crash_in_call(Config) ->
-    {ok, Pid} = gen_c_server:start(?config(cnode,Config),[],[{tracelevel,0}]),
-    {'EXIT',{{port_status,10},_}} = (catch gen_c_server:call(Pid,{stop,10})),
+crash_in_call(_Config) ->
+    {ok, Pid} = gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
+    {'EXIT',{{port_status,10},_}} = (catch gen_c_server:c_call(Pid,{stop,10})),
     {'EXIT',{noproc,_}} = (catch gen_c_server:stop(Pid)),
     ok.
 
-segfault_in_call(Config) ->
-    {ok, Pid} = gen_c_server:start(?config(cnode,Config),[],[{tracelevel,0}]),
-    {'EXIT',{{port_status,_},_}} = (catch gen_c_server:call(Pid,segfault)),
+segfault_in_call(_Config) ->
+    {ok, Pid} = gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
+    {'EXIT',{{port_status,_},_}} = (catch gen_c_server:c_call(Pid,segfault)),
     {'EXIT',{noproc,_}} = (catch gen_c_server:stop(Pid)),
     ok.
 
-abort_in_call(Config) ->
-    {ok, Pid} = gen_c_server:start(?config(cnode,Config),[],[{tracelevel,0}]),
-    {'EXIT',{{port_status,_},_}} = (catch gen_c_server:call(Pid,abort)),
+abort_in_call(_Config) ->
+    {ok, Pid} = gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
+    {'EXIT',{{port_status,_},_}} = (catch gen_c_server:c_call(Pid,abort)),
     {'EXIT',{noproc,_}} = (catch gen_c_server:stop(Pid)),
     ok.
 
-crash_in_cast(Config) ->
-    {ok, Pid} = gen_c_server:start(?config(cnode,Config),[],[{tracelevel,0}]),
-    ok = gen_c_server:cast(Pid,{stop,10}),
+crash_in_cast(_Config) ->
+    {ok, Pid} = gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
+    ok = gen_c_server:c_cast(Pid,{stop,10}),
     {'EXIT',{{port_status,10},_}} = (catch gen_c_server:stop(Pid)),
     ok.
 
-segfault_in_cast(Config) ->
-    {ok, Pid} = gen_c_server:start(?config(cnode,Config),[],[{tracelevel,0}]),
-    ok = gen_c_server:cast(Pid,segfault),
+segfault_in_cast(_Config) ->
+    {ok, Pid} = gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
+    ok = gen_c_server:c_cast(Pid,segfault),
     {'EXIT',{{port_status,_},_}} = (catch gen_c_server:stop(Pid)),
     ok.
 
-abort_in_cast(Config) ->
-    {ok, Pid} = gen_c_server:start(?config(cnode,Config),[],[{tracelevel,0}]),
-    ok = gen_c_server:cast(Pid,abort),
+abort_in_cast(_Config) ->
+    {ok, Pid} = gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
+    ok = gen_c_server:c_cast(Pid,abort),
     {'EXIT',{{port_status,_},_}} = (catch gen_c_server:stop(Pid)),
     ok.
 
-crash_in_info(Config) ->
-    {ok, Pid} = gen_c_server:start(?config(cnode,Config),[],[{tracelevel,0}]),
+crash_in_info(_Config) ->
+    {ok, Pid} = gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
     Pid ! {stop,10},
     {'EXIT',{{port_status,10},_}} = (catch gen_c_server:stop(Pid)),
     ok.
 
-segfault_in_info(Config) ->
-    {ok, Pid} = gen_c_server:start(?config(cnode,Config),[],[{tracelevel,0}]),
+segfault_in_info(_Config) ->
+    {ok, Pid} = gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
     Pid ! segfault,
     {'EXIT',{{port_status,_},_}} = (catch gen_c_server:stop(Pid)),
     ok.
 
-abort_in_info(Config) ->
-    {ok, Pid} = gen_c_server:start(?config(cnode,Config),[],[{tracelevel,0}]),
+abort_in_info(_Config) ->
+    {ok, Pid} = gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
     Pid ! abort,
     {'EXIT',{{port_status,_},_}} = (catch gen_c_server:stop(Pid)),
     ok.

@@ -10,6 +10,8 @@
          info_stop/1
         ]).
 
+-export([ c_node/0, init/2, terminate/2, handle_info/2 ]).
+
 all() -> [
           normal_replies,
           timeout_replies,
@@ -17,6 +19,26 @@ all() -> [
           cast_stop,
           info_stop
          ].
+
+%%%============================================================================
+%%%
+%%% gen_c_server callbacks
+%%%
+%%%============================================================================
+c_node() ->
+    filename:join([os:getenv("ROOT_DIR"),
+                   "build","install","reply_this","lib",
+                   "reply_this"]).
+
+init(Args, Opaque) ->
+    gen_c_server:c_init(Args, Opaque).
+
+terminate(Reason, ServerState) ->
+    gen_c_server:c_terminate(Reason, ServerState).
+
+handle_info(Info, ServerState) ->
+    gen_c_server:c_handle_info(Info, ServerState).
+
 
 %%==============================================================================
 %%
@@ -27,11 +49,7 @@ init_per_suite(Config) ->
     net_kernel:start([ct,longnames]),
     Config.
 
-init_per_testcase(_TestCase, Config) ->
-    CNode = filename:join([os:getenv("ROOT_DIR"),
-                           "build","install","reply_this","lib",
-                           "reply_this"]),
-    [ {cnode, CNode} | Config ].
+init_per_testcase(_TestCase, Config) -> Config.
 
 end_per_testcase(_TestCase, _Config) ->
     ok.
@@ -41,40 +59,40 @@ end_per_testcase(_TestCase, _Config) ->
 %% TESTS
 %%
 %%==============================================================================
-normal_replies(Config) ->
-    {ok, Pid} = gen_c_server:start(?config(cnode,Config),[],[{tracelevel,0}]),
-    10 = gen_c_server:call(Pid,{reply_this,{reply,10,undefined}}),
-    ok = gen_c_server:call(Pid,{reply_this,{reply,ok,[ok]}}),
-    [] = gen_c_server:call(Pid,{reply_this,{reply,[],10}}),
-    ok = gen_c_server:cast(Pid,{reply_this,{noreply,undefined}}),
+normal_replies(_Config) ->
+    {ok, Pid} = gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
+    10 = gen_c_server:c_call(Pid,{reply_this,{reply,10,undefined}}),
+    ok = gen_c_server:c_call(Pid,{reply_this,{reply,ok,[ok]}}),
+    [] = gen_c_server:c_call(Pid,{reply_this,{reply,[],10}}),
+    ok = gen_c_server:c_cast(Pid,{reply_this,{noreply,undefined}}),
     Pid ! {reply_this,{noreply,undefined}},
     gen_c_server:stop(Pid).
 
-timeout_replies(Config) ->
-    {ok, Pid} = gen_c_server:start(?config(cnode,Config),[],[{tracelevel,0}]),
-    ok = gen_c_server:cast(Pid,{reply_this,{noreply,undefined,hibernate}}),
-    10 = gen_c_server:call(Pid,{reply_this,{reply,10,undefined,hibernate}}),
+timeout_replies(_Config) ->
+    {ok, Pid} = gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
+    ok = gen_c_server:c_cast(Pid,{reply_this,{noreply,undefined,hibernate}}),
+    10 = gen_c_server:c_call(Pid,{reply_this,{reply,10,undefined,hibernate}}),
     Pid ! {reply_this,{noreply,undefined,hibernate}},
     gen_c_server:stop(Pid).
 
-call_stop(Config) ->
-    {ok, Pid} = gen_c_server:start(?config(cnode,Config),[],[{tracelevel,0}]),
-    10 = gen_c_server:call(Pid,{reply_this,{stop,"I was asked to",10,undefined}}),
+call_stop(_Config) ->
+    {ok, Pid} = gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
+    10 = gen_c_server:c_call(Pid,{reply_this,{stop,"I was asked to",10,undefined}}),
     case (catch gen_c_server:stop(Pid)) of
         {'EXIT',{noproc,_}} -> ok;
         {'EXIT',{"I was asked to",_}} -> ok
     end.
 
-cast_stop(Config) ->
-    {ok, Pid} = gen_c_server:start(?config(cnode,Config),[],[{tracelevel,0}]),
-    ok = gen_c_server:cast(Pid,{reply_this,{stop,"I was asked to",undefined}}),
+cast_stop(_Config) ->
+    {ok, Pid} = gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
+    ok = gen_c_server:c_cast(Pid,{reply_this,{stop,"I was asked to",undefined}}),
     case (catch gen_c_server:stop(Pid)) of
         {'EXIT',{noproc,_}} -> ok;
         {'EXIT',{"I was asked to",_}} -> ok
     end.
 
-info_stop(Config) ->
-    {ok, Pid} = gen_c_server:start(?config(cnode,Config),[],[{tracelevel,0}]),
+info_stop(_Config) ->
+    {ok, Pid} = gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
     Pid ! {reply_this,{stop,"I was asked to",undefined}},
     case (catch gen_c_server:stop(Pid)) of
         {'EXIT',{noproc,_}} -> ok;

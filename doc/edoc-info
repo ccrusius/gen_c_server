@@ -1,3 +1,0 @@
-%% encoding: UTF-8
-{application,gen_c_server}.
-{modules,[gen_c_server]}.

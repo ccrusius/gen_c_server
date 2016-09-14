@@ -20,212 +20,6 @@
 %%
 %%==============================================================================
 %%
-%% @doc A `gen_server' for C nodes.
-%%
-%% <a href="http://erlang.org/doc/tutorial/cnode.html">C nodes</a>
-%% are a way of implementing native binaries, written in C, that behave
-%% like Erlang nodes, capable of sending and receiving messages from Erlang
-%% processes. Amongst the ways of interfacing Erlang with C, C nodes are the
-%% most robust: since the nodes are independent OS processes, crashes do not
-%% affect the Erlang VM. Compare this to a NIF, for example, where a problem in
-%% the C code may cause the entire Erlang VM to crash.
-%%
-%% Making C nodes work with Erlang, however, is not a simple task. Your
-%% executable is started by hand, and has to set up communications with an
-%% existing Erlang process. Since the executable does not know where to connect
-%% to in advance, the necessary parameters have to be given to it in the
-%% command line  when the C node is started.
-%% Once all of that is done, the C node
-%% enters a message loop, waiting for messages and replying to them. If the
-%% computations it is performing take too long, the calling Erlang process may
-%% infer that the C node is dead, and cut communications with it. This is
-%% because Erlang will be sending `TICK' messages to the C node to keep the
-%% connection alive. The only way around this is to make the C node have
-%% separate threads to deal with user-generated messages and system-generated
-%% messages. The list does go on.
-%%
-%% This module, and its accompanying library, `libgen_c_server.a', hide this
-%% complexity and require the C node implementer to define only the equivalent
-%% `gen_server' callbacks in C. Within these callbacks, the developer uses
-%% the `ei' library to manipulate Erlang terms.
-%%
-%% == Writing a C Node ==
-%%
-%% A C node is written by implementing the necessary callbacks, and linking
-%% the executable against `libgen_c_server.a', which defines `main()' for you.
-%% When implementing callbacks, the rule of thumb is this: for each callback
-%% you would implement in an Erlang `gen_server' callback module, implement a
-%% `gcs_'<em>name</em> function in C instead. This function takes in the same
-%% arguments as the Erlang callback, plus a last `ei_x_buff*' argument where the
-%% function should build its reply (when a reply is needed). The other
-%% arguments are `const char*' pointing to `ei' buffers containing the
-%% arguments themselves.
-%%
-%% A full C node skeleton thus looks like this:
-%% ```
-%% #include "gen_c_server.h"
-%%
-%% void gcs_init(const char *args_buff, ei_x_buff *reply) {
-%%   /* IMPLEMENT ME */
-%% }
-%%
-%% void gcs_handle_call(const char *request_buff,
-%%                      const char *from_buff,
-%%                      const char *state_buff,
-%%                      ei_x_buff *reply) {
-%%   /* IMPLEMENT ME */
-%% }
-%%
-%% void gcs_handle_cast(const char *request_buff,
-%%                      const char *state_buff,
-%%                      ei_x_buff *reply) {
-%%   /* IMPLEMENT ME */
-%% }
-%%
-%% void gcs_handle_info(const char *info_buff,
-%%                      const char *state_buff,
-%%                      ei_x_buff *reply) {
-%%   /* IMPLEMENT ME */
-%% }
-%%
-%% void gcs_terminate(const char *reason_buff, const char *state_buff) {
-%%   /* IMPLEMENT ME */
-%% }
-%% '''
-%% Let's see how this looks like in a C node that simply counts the number
-%% of calls made to each function. (This C node is included in the source
-%% distribution of `gen_c_server', as one of the tests.) In this C node,
-%% We make use of an utility `gcs_decode' function which is provided by the
-%% `gen_c_server' library, that allows us to decode `ei' buffers in a
-%% `sscanf'-like manner. Consult the header file for more details.
-%% ```
-%% #include "gen_c_server.h"
-%%
-%% /*
-%%  * Utility function that encodes a state tuple based on the arguments.
-%%  * The state is a 3-tuple, { num_calls, num_casts, num_infos }
-%%  */
-%% static void encode_state(
-%%         ei_x_buff *reply,
-%%         long ncalls,
-%%         long ncasts,
-%%         long ninfos)
-%% {
-%%     ei_x_encode_tuple_header(reply,3);
-%%     ei_x_encode_long(reply,ncalls);
-%%     ei_x_encode_long(reply,ncasts);
-%%     ei_x_encode_long(reply,ninfos);
-%% }
-%%
-%% /*
-%%  * Initialize the C node, replying with a zeroed-out state.
-%%  */
-%% void gcs_init(const char* args_buff, ei_x_buff *reply)
-%% {
-%%     /* Reply: {ok,{0,0,0}} */
-%%     ei_x_encode_tuple_header(reply,2);
-%%     ei_x_encode_atom(reply,"ok");
-%%     encode_state(reply,0,0,0);
-%% }
-%%
-%% /*
-%%  * When called, increment the number of calls, and reply with the new state.
-%%  */
-%% void gcs_handle_call(
-%%         const char *request_buff,
-%%         const char *from_buff,
-%%         const char *state_buff,
-%%         ei_x_buff  *reply)
-%% {
-%%     long ncalls, ncasts, ninfos;
-%%     gcs_decode(state_buff,(int*)0,"{lll}",3,&ncalls,&ncasts,&ninfos);
-%%
-%%     /* Reply: {reply,Reply=NewState,NewState={ncalls+1,ncasts,ninfos}} */
-%%     ei_x_encode_tuple_header(reply,3);
-%%     ei_x_encode_atom(reply,"reply");
-%%     encode_state(reply,ncalls+1,ncasts,ninfos);
-%%     encode_state(reply,ncalls+1,ncasts,ninfos);
-%% }
-%%
-%% /*
-%%  * When casted, increment the number of casts, and reply with the new state.
-%%  */
-%% void gcs_handle_cast(
-%%         const char *request_buff,
-%%         const char *state_buff,
-%%         ei_x_buff  *reply)
-%% {
-%%     long ncalls, ncasts, ninfos;
-%%     gcs_decode(state_buff,(int*)0,"{lll}",3,&ncalls,&ncasts,&ninfos);
-%%
-%%     /* Reply: {noreply,NewState={ncalls,ncasts+1,ninfos}} */
-%%     ei_x_encode_tuple_header(reply,2);
-%%     ei_x_encode_atom(reply,"noreply");
-%%     encode_state(reply,ncalls,ncasts+1,ninfos);
-%% }
-%%
-%% /*
-%%  * When info-ed, increment the number of infos, and reply with the new state.
-%%  */
-%% void gcs_handle_info(
-%%         const char *info_buff,
-%%         const char *state_buff,
-%%         ei_x_buff  *reply)
-%% {
-%%     long ncalls, ncasts, ninfos;
-%%     gcs_decode(state_buff,(int*)0,"{lll}",3,&ncalls,&ncasts,&ninfos);
-%%
-%%     /* Reply: {noreply,NewState={ncalls,ncasts,ninfos+1}} */
-%%     ei_x_encode_tuple_header(reply,2);
-%%     ei_x_encode_atom(reply,"noreply");
-%%     encode_state(reply,ncalls,ncasts,ninfos+1);
-%% }
-%%
-%% /*
-%%  * We don't need to clean anything up when terminating.
-%%  */
-%% void gcs_terminate(const char *reason_buff, const char *state_buff) { }
-%% '''
-%%
-%% Once you compile (with the appropriate flags so the compiler finds
-%% `gen_c_server.h' and `ei.h') and link (with the appropriate flags to the
-%% linker links in `libgen_c_server', `erl_interface', and `ei' libraries) this
-%% node, you can use it from Erlang as follows:
-%% ```
-%% {ok,Pid} = gen_c_server:start("/path/to/my/c/node/executable",[],[]),
-%% {1,0,0} = gen_c_server:call(Pid,"Any message"),
-%% ok = gen_c_server:cast(Pid,"Any old message"),
-%% {2,1,0} = gen_c_server:call(Pid,"Any message"),
-%% Pid ! "Any message, really",
-%% {3,1,1} = gen_c_server:call(Pid,[]),
-%% gen_c_server:stop(Pid).
-%% '''
-%% Note that the Erlang shell has to have a registered name, which means
-%% you have to start it with either the `-name' or `-sname' options passed in.
-%% This is because the C node needs a registered Erlang node to connect to.
-%%
-%% == Limitations ==
-%%
-%% Currently, not all replies from the callback functions are accepted.
-%% In particular,
-%%
-%% <ul>
-%% <li> `gcs_handle_call' can only reply `{reply,Reply,NewState}',
-%%      `{reply,Reply,NewState,hibernate}' or `{stop,Reason,Reply,NewState}'.
-%% </li>
-%% <li> `gcs_handle_cast' can only reply `{noreply,NewState}',
-%%      `{noreply,NewState,hibernate}' or `{stop,Reason,NewState}'.
-%% </li>
-%% <li> `gcs_handle_info' can only reply `{noreply,NewState}',
-%%      `{noreply,NewState,hibernate}' or `{stop,Reason,NewState}'.
-%% </li>
-%% </ul>
-%%
-%% @author Cesar Crusius
-%% @copyright 2016 Cesar Crusius
-%%
-%% @end
-%%
 %% == Internals ==
 %%
 %% The `gen_c_server' Erlang module acts as a proxy between a `gen_server' and
@@ -257,7 +51,7 @@
 %% 4                    <------------------------
 %% 5                    ------------------------> msg_loop --------> gcs_init() {
 %% 6                    <------------------------          <--------   return;
-%% 7                    ----->                                       }
+%% 7                    ----->}
 %% '''
 %% <ol>
 %% <li>`gen_c_server:start' calls `gen_server:start', starting the regular OTP
@@ -297,148 +91,179 @@
 %%
 %%==============================================================================
 -module(gen_c_server).
+-behaviour(gen_server).
 
-%%==============================================================================
-%%
-%% Public API
-%%
-%%==============================================================================
--export([start/3,start_link/3,call/2,call/3,cast/2,stop/1]).
+%%% ---------------------------------------------------------------------------
+%%%
+%%% Public API
+%%%
+%%% ---------------------------------------------------------------------------
+-export([start/3, start/4,
+         start_link/3, start_link/4,
+         stop/1,
+         call/2, call/3,
+         c_call/2, c_call/3,
+         cast/2,
+         c_cast/2,
+         c_handle_info/2,
+         c_init/2, c_terminate/2]).
 
-%%==============================================================================
-%%
-%% gen_server callbacks
-%%
-%%==============================================================================
--export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2]).
 
-%%==============================================================================
-%%
-%% Internal state
-%%
-%%==============================================================================
+%%% ---------------------------------------------------------------------------
+%%%
+%%% gen_server callbacks
+%%%
+%%% ---------------------------------------------------------------------------
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
+
+%%% ---------------------------------------------------------------------------
+%%%
+%%% Behaviour callbacks
+%%%
+%%% ---------------------------------------------------------------------------
+-type server_state() :: {State :: term(), Opaque :: term()}.
+
+-callback c_node() -> Path :: term().
+
+-callback init(Args :: term(), Opaque :: term()) ->
+    {ok, ServerState :: server_state()} |
+    {ok, ServerState :: server_state(), timeout() | hibernate} |
+    {stop, Reason :: term()} | ignore.
+
+-callback terminate(
+            Reason :: (normal | shutdown | {shutdown, term()} | term ()),
+            ServerState :: server_state()) ->
+    term().
+
+-callback handle_call(Request :: term(), From :: {pid(), Tag :: term()},
+                      ServerState :: server_state()) ->
+    {reply, Reply :: term(), NewServerState :: server_state()} |
+    {reply, Reply :: term(), NewServerState :: server_state(), timeout() | hibernate} |
+    {noreply, NewServerState :: server_state()} |
+    {noreply, NewServerState :: server_state(), timeout() | hibernate} |
+    {stop, Reason :: term(), Reply :: term(), NewServerState :: server_state()} |
+    {stop, Reason :: term(), NewServerState :: server_state()}.
+
+-callback handle_cast(Request :: term(), ServerState :: server_state()) ->
+    {noreply, NewServerState :: server_state()} |
+    {noreply, NewServerState :: server_state(), timeout() | hibernate} |
+    {stop, Reason :: term(), NewServerState :: server_state()}.
+
+-callback handle_info(Info :: timeout | term(), ServerState :: server_state()) ->
+    {noreply, NewServerState :: server_state()} |
+    {noreply, NewServerState :: server_state(), timeout() | hibernate} |
+    {stop, Reason :: term(), NewServerState :: server_state()}.
+
+
+%%%----------------------------------------------------------------------------
+%%%
+%%% Internal state
+%%%
+%%% The internal state is represented by the `state' record. The
+%%% `gen_server' state itself is a pair `{State, InternalState}',
+%%% where `State' is the user-defined state.
+%%%
+%%%----------------------------------------------------------------------------
 -record(state, {
+          mod, % .......... The Erlang module implementing the behaviour
           port, % ......... The Erlang port used to communicate with the C node
           mbox, % ......... Messages to the C node will be sent here
           buffer, % ....... Buffer for stdout capturing
-          c_node_state % .. The C node's own state
-         }).
+          tracelevel % .... The desired trace level
+}).
 
 state_new() -> #state{
+                  mod    = undefined,
                   port   = undefined,
                   mbox   = undefined,
                   buffer = undefined,
-                  c_node_state = undefined
-                 }.
+                  tracelevel = undefined
+}.
 
-state_disconnect(State) -> State#state{ port=undefined, mbox=undefined }.
-state_clearbuffer(State) -> State#state{ buffer=undefined }.
+state_disconnect({State, InternalState}) ->
+    {State, InternalState#state{port = undefined, mbox = undefined}}.
+state_clearbuffer(State) -> State#state{buffer = undefined}.
 
-%%==============================================================================
-%%
-%% Starting
-%%
-%% Delegates to gen_server:start with the proper arguments, which will call
-%% init/1 below.
-%%
-%%==============================================================================
-%%
-%% @doc Create a stand-alone C node server process.
-%% A stand-alone server process is one which is not a part of a supervision
-%% tree, and thus has no supervisor.
-%%
-%% See {@link start_link/3}
-%% for a description of arguments and return values.
-%%
-%% @end
-%%
-%%==============================================================================
-start(CNode,Args,Options) ->
-    TraceLevel = proplists:get_value(tracelevel,Options,1),
+%%%----------------------------------------------------------------------------
+%%%
+%%% Starting
+%%%
+%%%----------------------------------------------------------------------------
+start(Mod, Args, Options) ->
+    TraceLevel = proplists:get_value(tracelevel, Options, 1),
     gen_server:start(?MODULE
-                    ,[CNode,TraceLevel,Args]
-                    ,proplists:delete(tracelevel,Options)).
-%%==============================================================================
-%%
-%% @doc Create a stand-alone C node server process as a part of a supervision
-%% tree. The function should be called, directly or indirectly, by the
-%% supervisor. It will, among other things, ensure that the gen_server is
-%% linked to the supervisor.
-%%
-%% There are only two differences between this function and
-%% `gen_server:start_link/3':
-%%
-%% <ul>
-%% <li>
-%%   The first argument, `CNode', is a string containing the name of the C node
-%%   executable (instead of `gen_server''s `Module' argument). If it is not a
-%%   fully qualified path, the executable should be in some directory in
-%%   `$PATH'.
-%% </li>
-%% <li>
-%%   The `init' function that is usually called by `gen_server:start_link'
-%%   should be a C function `gcs_init' implemented in the C node (see
-%%   {@section Writing a C node}, above, for details).
-%% </li>
-%% </ul>
-%%
-%% See <a href="http://erlang.org/doc/man/gen_server.html#start_link-3">
-%% `gen_server:start_link/3'</a> for a complete description of other arguments
-%% and return values.
-%%
-%% @end
-%%
-%%==============================================================================
-start_link(CNode,Args,Options) ->
-    TraceLevel = proplists:get_value(tracelevel,Options,1),
-    gen_server:start_link(?MODULE
-                    ,[CNode,TraceLevel,Args]
-                    ,proplists:delete(tracelevel,Options)).
+                    , [Mod, TraceLevel, Args]
+                    , proplists:delete(tracelevel, Options)).
 
-%%==============================================================================
-%%
-%% init
-%%
-%%==============================================================================
-%%
-%% @private
-%%
-init([CNode,TraceLevel,Args]) ->
+start(Name, Mod, Args, Options) ->
+    TraceLevel = proplists:get_value(tracelevel, Options, 1),
+    gen_server:start(Name
+                    ,?MODULE
+                    , [Mod, TraceLevel, Args]
+                    , proplists:delete(tracelevel, Options)).
+
+start_link(Mod, Args, Options) ->
+    TraceLevel = proplists:get_value(tracelevel, Options, 1),
+    gen_server:start_link(?MODULE
+                    , [Mod, TraceLevel, Args]
+                    , proplists:delete(tracelevel, Options)).
+
+start_link(Name, Mod, Args, Options) ->
+    TraceLevel = proplists:get_value(tracelevel, Options,1),
+    gen_server:start_link(Name
+                    ,?MODULE
+                    , [Mod, TraceLevel, Args]
+                    , proplists:delete(tracelevel, Options)).
+
+init([Mod, TraceLevel, Args]) ->
+    case node_id(Mod) of
+        {command_not_found, _} = Reply -> {stop, Reply};
+        {_Cmd, NodeName, HostName} ->
+            %% Initialize internal state
+            MboxAtom = list_to_atom(lists:flatten([NodeName,"@", HostName])),
+            Mbox = {c_node, MboxAtom},
+            InternalState = (state_new())#state{mod = Mod,
+                                                tracelevel = TraceLevel,
+                                                mbox = Mbox},
+            %% Call Mod:init
+            Mod:init(Args, InternalState)
+    end.
+
+c_init(Args, InternalState) ->
     process_flag(trap_exit, true),
-    case os:find_executable(CNode) of
-        false -> {stop, {command_not_found,CNode}};
-        Cmd ->
-            % We're not given a node ID, so we come up with one. The only
-            % requirement we have is that it has to be short enough, and has to
-            % uniquely identify CNode.
-            NodeName = bin_to_hex(crypto:hash(md5,Cmd)),
-            HostName = string:sub_word(atom_to_list(node()), 2, $@),
-            MboxAtom = list_to_atom(lists:flatten([NodeName,"@",HostName])),
-            Mbox     = {c_node,MboxAtom},
-            Port = open_port( {spawn_executable, Cmd}
-                            , [ {args, [ NodeName, HostName, atom_to_list(node())
-                                       , atom_to_list(erlang:get_cookie())
-                                       , integer_to_list(TraceLevel)
-                                       ]}
-                              , stream, {line,100}
-                              , stderr_to_stdout
-                              , exit_status
-                              ]),
-            case wait_for_startup((state_new())#state{port=Port, mbox=Mbox}) of
-                {stop, Error} -> {stop, Error};
-                {ok, State} ->
-                    Mbox ! {init, self(), Args, undefined, undefined},
-                    case wait_for_init(state_clearbuffer(State)) of
-                        {ok, CNodeState} ->
-                            {ok,State#state{c_node_state=CNodeState}};
-                        {ok, CNodeState, X} ->
-                            {ok,State#state{c_node_state=CNodeState},X};
-                        Other -> Other
-                    end
+    #state{mod = Mod, mbox = Mbox, tracelevel = TraceLevel} = InternalState,
+    {Cmd, NodeName, HostName} = node_id(Mod),
+    Port = open_port({spawn_executable, Cmd},
+                     [ {args, [NodeName, HostName, atom_to_list(node()),
+                               atom_to_list(erlang:get_cookie()),
+                               integer_to_list(TraceLevel)]},
+                       stream, {line,100},
+                       stderr_to_stdout,
+                       exit_status]),
+    NewInternalState = InternalState#state{port = Port},
+    case wait_for_startup(NewInternalState) of
+        {stop, Error} -> {stop, Error};
+        {ok, State} ->
+            Mbox ! {init, self(), Args, undefined, undefined},
+            case wait_for_init(state_clearbuffer(State)) of
+                {ok, UserState} -> {ok, {UserState, NewInternalState}};
+                {ok, UserState, Flag} -> {ok, {UserState, NewInternalState}, Flag};
+                Other -> Other
             end
     end.
 
-bin_to_hex(<<H,T/binary>>) -> io_lib:format("~.16B",[H]) ++ bin_to_hex(T);
+node_id(Mod) ->
+    CNode = Mod:c_node(),
+    case os:find_executable(CNode) of
+        false ->
+            {command_not_found, CNode};
+        Cmd ->
+            NodeName = bin_to_hex(crypto:hash(md5, Cmd)),
+            HostName = string:sub_word(atom_to_list(node()), 2, $@),
+            {Cmd, NodeName, HostName}
+    end.
+
+bin_to_hex(<<H, T/binary>>) -> io_lib:format("~.16B", [H]) ++ bin_to_hex(T);
 bin_to_hex(<<>>) -> [].
 
 -define(C_NODE_READY_MSG,".-. . .- -.. -.--"). % Morse code for "ready"
@@ -449,241 +274,246 @@ bin_to_hex(<<>>) -> [].
 % in the ensure_node/2 function. It does not work here for some obscure reason.
 % Until I can figure that out, the stdout hack stays.
 %
-wait_for_startup(#state{port=Port,buffer=Buffer}=State) ->
+wait_for_startup(#state{port = Port, buffer = Buffer}= State) ->
     receive
         {Port, {data, {eol, ?C_NODE_READY_MSG}}} ->
             {ok, state_clearbuffer(State)};
         {Port, {exit_status, N}}   -> {stop, {exit_status, N}};
         {Port, {data, Chunk}} ->
             wait_for_startup(State#state{
-                               buffer=update_message_buffer(Buffer,Chunk)})
+                               buffer = update_message_buffer(Buffer, Chunk)})
     end.
 
-wait_for_init(#state{port=Port,mbox={_,Id},buffer=Buffer}=State) ->
+wait_for_init(#state{port = Port, mbox ={_, Id}, buffer = Buffer}= State) ->
     receive
         {Port, {exit_status, N}}   -> {stop, {exit_status, N}};
         {Port, {data, Chunk}} ->
             wait_for_init(State#state{
-                               buffer=update_message_buffer(Buffer,Chunk)});
-        {Id,Reply} -> Reply;
+                               buffer = update_message_buffer(Buffer, Chunk)});
+        {Id, Reply} -> Reply;
         Other -> {stop, {invalid_init_reply, Other}}
     end.
 
-%%==============================================================================
-%%
-%% stopping
-%%
-%% R16's gen_server does not have the stop() function. We go with a call here.
-%%
-%%==============================================================================
-stop(ServerRef) -> gen_server:call(ServerRef,stop).
+%%%----------------------------------------------------------------------------
+%%%
+%%% Stopping
+%%%
+%%% R16's gen_server does not have the stop() function. We go with a
+%%% call here. This will be intercepted later on in `handle_call',
+%%% which will reply `stop' and trigger the `gen_server' termination
+%%% process, which will finally call `terminate' for us.
+%%%
+%%%----------------------------------------------------------------------------
+stop(ServerRef) -> gen_server:call(ServerRef,'$gcs_stop').
 
-%%==============================================================================
-%%
-%% terminate
-%%
-%%==============================================================================
-%%
-%% @private
-%%
-terminate(_Reason, #state{mbox=undefined}=_State) -> ok;
-terminate(Reason, #state{mbox=Mbox,c_node_state=CNodeState} = State) ->
-    Mbox ! {terminate, self(), Reason, CNodeState, undefined},
-    wait_for_exit(state_clearbuffer(State)).
+terminate(Reason, {_, #state{mod = Mod}} = ServerState) ->
+    Mod:terminate(Reason, ServerState).
 
-wait_for_exit(#state{port=Port,buffer=Buffer} = State) ->
+c_terminate(_Reason, {_State, #state{mbox = undefined}}) ->
+    ok;
+c_terminate(Reason, {State, #state{mbox = Mbox} = InternalState}) ->
+    Mbox ! {terminate, self(), Reason, State, undefined},
+    wait_for_exit(InternalState).
+
+wait_for_exit(#state{port = Port, buffer = Buffer} = State) ->
     receive
         {Port, {exit_status, 0}} -> ok;
         {Port, {exit_status, _N}} -> ok;
         {'EXIT', Port, _Reason}   -> ok;
         {Port, {data, Chunk}} ->
             wait_for_exit(State#state{
-                               buffer=update_message_buffer(Buffer,Chunk)});
+                               buffer = update_message_buffer(Buffer, Chunk)});
         _Other ->
             wait_for_exit(State)
     end.
 
+%%% ---------------------------------------------------------------------------
+%%%
+%%% Calls
+%%%
+%%% Both C and Erlang calls are handled by our own handle_call. The
+%%% difference is in the parameters it gets in each case.
+%%%
+%%% ---------------------------------------------------------------------------
 
-%%==============================================================================
-%%
-%% calls
-%%
-%%==============================================================================
-%% @equiv call(ServerRef, Request, 5000)
-%%
 call(ServerRef, Request) ->
-    %io:fwrite("gen_c_server:call(~w,~w)",[ServerRef,Request]),
-    gen_server:call(ServerRef,Request).
-%%
-%% @doc Make a synchronous call.
-%%
-%% The only difference between this function and `gen_server:call/3' is that
-%% the callback function should be implemented by a `gcs_handle_call' function
-%% in the C node see {@section Writing a C node}, above, for details).
-%%
-%% See <a href="http://erlang.org/doc/man/gen_server.html#call-3">
-%% `gen_server:call/3'</a> for a complete description of arguments
-%% and return values.
-%% @end
-%%==============================================================================
-call(ServerRef, Request, Timeout) ->
-    %io:fwrite("gen_c_server:call(~w,~w,~w)",[ServerRef,Request,Timeout]),
-    gen_server:call(ServerRef,Request,Timeout).
+    %io:fwrite("gen_c_server:call(~w,~w)", [ServerRef, Request]),
+    gen_server:call(ServerRef, {'$gcs_ecall', Request}).
 
-%%
-%% The 'stop' call is generated from our own stop/1. It replies to gen_server
-%% telling it to, well, stop, which will cause a call to terminate, which will
-%% then take care of the C node stopping activities.
-%%
-%% @private
-%%
-handle_call(stop, _From, State) ->
+call(ServerRef, Request, Timeout) ->
+    %io:fwrite("gen_c_server:call(~w,~w,~w)", [ServerRef, Request, Timeout]),
+    gen_server:call(ServerRef, {'$gcs_ecall', Request}, Timeout).
+
+c_call(ServerRef, Request) ->
+    gen_server:call(ServerRef, {'$gcs_ccall', Request}).
+
+c_call(ServerRef, Request, Timeout) ->
+    %io:fwrite("gen_c_server:c_call(~w,~w,~w)", [ServerRef, Request, Timeout]),
+    gen_server:call(ServerRef, {'$gcs_ccall', Request}, Timeout).
+
+%%%
+%%% The 'stop' call is generated from our own stop/1. It replies to gen_server
+%%% telling it to, well, stop, which will cause a call to terminate, which will
+%%% then take care of the C node stopping activities.
+%%%
+%%% @private
+%%%
+handle_call('$gcs_stop', _From, State) ->
     {stop, normal, ok, State};
-%%
-%% This is a normal call, which is forwarded to the C node. The expected reply
-%% from the C node is
-%%
-%%      {'$gcs_call_reply',From,Reply}
-%%
-%% where 'Reply' is a gen_server-style reply. We have to wait for the reply
-%% here, and block while waiting only for messages we understand.
-%%
-handle_call(Request, From, #state{mbox=Mbox, c_node_state=CNodeState} = State) ->
-    %io:fwrite("handle_call(~w,~w,~w)",[Request,From,State]),
-    {_,Id} = Mbox,
-    Mbox ! {call, self(), Request, CNodeState, From},
+%%%
+%%% Call to Erlang callback module
+%%%
+handle_call({'$gcs_ecall', Request}, From,
+            {_, #state{mod = Mod}} = ServerState) ->
+    Mod:handle_call(Request, From, ServerState);
+%%%
+%%% This is a normal call, which is forwarded to the C node. The expected reply
+%%% from the C node is
+%%%
+%%%      {'$gcs_call_reply', From, Reply}
+%%%
+%%% where 'Reply' is a gen_server-style reply. We have to wait for the reply
+%%% here, and block while waiting only for messages we understand.
+%%%
+handle_call({'$gcs_ccall', Request}, From,
+            {State, #state{mbox = Mbox} = InternalState} = ServerState) ->
+    %io:fwrite("handle_call(~w,~w,~w)", [Request, From, State]),
+    {_, Id} = Mbox,
+    Mbox ! {call, self(), Request, State, From},
     receive
         %
         % The C node is gone
         %
         {_Port, {exit_status, N}} when N =/= 0 ->
-            {stop, {port_status, N}, State};
+            {stop, {port_status, N}, ServerState};
         %
         % 'reply'
         %
-        {Id,{'$gcs_call_reply',From,{reply,Reply,NewCNodeState}}} ->
-            {reply,Reply,State#state{c_node_state=NewCNodeState}};
-        {Id,{'$gcs_call_reply',From,{reply,Reply,NewCNodeState,hibernate}}} ->
-            {reply,Reply,State#state{c_node_state=NewCNodeState},hibernate};
+        {Id,{'$gcs_call_reply', From,{reply, Reply, NewState}}} ->
+            {reply, Reply,{NewState, InternalState}};
+        {Id,{'$gcs_call_reply', From,{reply, Reply, NewState, hibernate}}} ->
+            {reply, Reply, {NewState, InternalState}, hibernate};
         %
         % 'stop'
         %
-        {Id,{'$gcs_call_reply',From,{stop,Reason,Reply,NewCNodeState}}} ->
-            {stop,Reason,Reply,State#state{c_node_state=NewCNodeState}}
+        {Id, {'$gcs_call_reply', From, {stop, Reason, Reply, NewState}}} ->
+            {stop, Reason, Reply, {NewState, InternalState}}
     end;
-%%
-%% What the hell is going on here?
-%%
-handle_call(_Request, _From, State) ->
-    %io:fwrite("rogue handle_call(~w,~w,~w)",[Request,From,State]),
-    {reply,ok,State}.
+%%%
+%%% What the hell is going on here?
+%%%
+handle_call(_Request, _From, ServerState) ->
+    %io:fwrite("rogue handle_call(~w,~w,~w)", [Request, From, State]),
+    {reply, ok, ServerState}.
 
-%%==============================================================================
-%%
-%% casts
-%%
-%%==============================================================================
-%%
-%% @doc Make an asynchronous call.
-%%
-%% The only difference between this function and `gen_server:cast/2' is that
-%% the callback function should be implemented by a `gcs_handle_cast' function
-%% in the C node see {@section Writing a C node}, above, for details).
-%%
-%% See <a href="http://erlang.org/doc/man/gen_server.html#cast-2">
-%% `gen_server:cast/2'</a> for a complete description of arguments
-%% and return values.
-%% @end
+%%% ---------------------------------------------------------------------------
+%%%
+%%% Casts
+%%%
+%%% ---------------------------------------------------------------------------
+
 cast(ServerRef, Request) ->
-    gen_server:cast(ServerRef, Request).
-%%
-%% @private
-%%
-handle_cast(Request, #state{mbox=Mbox, c_node_state=CNodeState} = State) ->
-    {_,Id} = Mbox,
-    Mbox ! {cast, self(), Request, CNodeState, undefined},
+    gen_server:cast(ServerRef, {'$gcs_ecast', Request}).
+
+c_cast(ServerRef, Request) ->
+    gen_server:cast(ServerRef, {'$gcs_ccast', Request}).
+
+%%%
+%%% Erlang casts
+%%%
+handle_cast({'$gcs_ecast', Request},
+            {_State, #state{mod = Mod}} = ServerState) ->
+    Mod:handle_cast(Request, ServerState);
+%%%
+%%% C node casts
+%%%
+handle_cast({'$gcs_ccast', Request},
+            {State, #state{mbox = Mbox} = InternalState} = ServerState) ->
+    {_, Id} = Mbox,
+    Mbox ! {cast, self(), Request, State, undefined},
     receive
         %
         % The C node is gone
         %
         {_Port, {exit_status, N}} when N =/= 0 ->
-            {stop, {port_status, N}, State};
+            {stop, {port_status, N}, ServerState};
         %
         % 'noreply'
         %
-        {Id,{'$gcs_cast_reply',{noreply,NewCNodeState}}} ->
-            {noreply,State#state{c_node_state=NewCNodeState}};
-        {Id,{'$gcs_cast_reply',{noreply,NewCNodeState,hibernate}}} ->
-            {noreply,State#state{c_node_state=NewCNodeState},hibernate};
+        {Id, {'$gcs_cast_reply', {noreply, NewState}}} ->
+            {noreply, {NewState, InternalState}};
+        {Id, {'$gcs_cast_reply', {noreply, NewState, hibernate}}} ->
+            {noreply, {NewState, InternalState}, hibernate};
         %
         % 'stop'
         %
-        {Id,{'$gcs_cast_reply',{stop,Reason,NewCNodeState}}} ->
-            {stop,Reason,State#state{c_node_state=NewCNodeState}}
+        {Id, {'$gcs_cast_reply', {stop, Reason, NewState}}} ->
+            {stop, Reason, {NewState, InternalState}}
     end;
-%%
-%% What the hell is going on here?
-%%
-handle_cast(_Request, State) ->
-    %io:fwrite("rogue handle_cast(~w,~w)",[_Request,State]),
-    {noreply,State}.
+%%%
+%%% A cast we don't understand.
+%%%
+handle_cast(_Request, ServerState) ->
+    %io:fwrite("rogue handle_cast(~w,~w)", [_Request, State]),
+    {noreply, ServerState}.
 
-
-
-%%==============================================================================
-%%
-%% handle_info
-%%
-%%==============================================================================
-%%
-%% handle_info for termination messages
-%%
-%%==============================================================================
-%%
-%% @private
-%%
-handle_info({Port, {exit_status, 0}}, #state{port=Port} = State) ->
+%%% ---------------------------------------------------------------------------
+%%%
+%%% handle_info
+%%%
+%%% ---------------------------------------------------------------------------
+%%%
+%%% handle_info for termination messages
+%%%
+%%% ---------------------------------------------------------------------------
+handle_info({Port, {exit_status, 0}}, {_, #state{port = Port}} = ServerState) ->
     error_logger:info_report("C node exiting"),
-    {stop, normal, state_disconnect(State)};
-handle_info({Port, {exit_status, N}}, #state{port=Port} = State) ->
+    {stop, normal, state_disconnect(ServerState)};
+handle_info({Port, {exit_status, N}}, {_, #state{port = Port}} = ServerState) ->
     error_logger:error_report("C node exiting"),
-    {stop, {port_status, N}, state_disconnect(State)};
-handle_info({'EXIT', Port, Reason}, #state{port=Port} = State) ->
+    {stop, {port_status, N}, state_disconnect(ServerState)};
+handle_info({'EXIT', Port, Reason}, {_, #state{port = Port}} = ServerState) ->
     error_logger:error_report("C node exiting"),
-    {stop, {port_exit, Reason}, state_disconnect(State)};
-%%==============================================================================
-%%
-%% handle_info for stdout messages from C node
-%%
-%%==============================================================================
-handle_info({Port, {data, Chunk}}, #state{port=Port,buffer=Buffer} = State) ->
-    {noreply, State#state{buffer=update_message_buffer(Buffer,Chunk)}};
-%%==============================================================================
-%%
-%% Other info: pass it on to the C node
-%%
-%%==============================================================================
-handle_info(Info, #state{mbox=Mbox, c_node_state=CNodeState} = State) ->
-    {_,Id} = Mbox,
-    Mbox ! {info, self(), Info, CNodeState, undefined},
+    {stop, {port_exit, Reason}, state_disconnect(ServerState)};
+%%% ---------------------------------------------------------------------------
+%%%
+%%% handle_info for stdout messages from C node
+%%%
+%%% ---------------------------------------------------------------------------
+handle_info({Port, {data, Chunk}},
+            {State, #state{port = Port, buffer = Buffer} = InternalState}) ->
+    {noreply, {State,
+               InternalState#state{buffer = update_message_buffer(Buffer, Chunk)}}};
+%%% ---------------------------------------------------------------------------
+%%%
+%%% Other info: pass it on to the Erlang module callback.
+%%%
+%%% ---------------------------------------------------------------------------
+handle_info(Info, {_, #state{mod = Mod}} = ServerState) ->
+    Mod:handle_info(Info, ServerState).
+
+c_handle_info(Info,
+              {State, #state{mbox = Mbox} = InternalState} = ServerState) ->
+    {_, Id} = Mbox,
+    Mbox ! {info, self(), Info, State, undefined},
     receive
         %
         % The C node is gone
         %
         {_Port, {exit_status, N}} when N =/= 0 ->
-            {stop, {port_status, N}, State};
+            {stop, {port_status, N}, ServerState};
         %
         % 'noreply'
         %
-        {Id,{'$gcs_info_reply',{noreply,NewCNodeState}}} ->
-            {noreply,State#state{c_node_state=NewCNodeState}};
-        {Id,{'$gcs_info_reply',{noreply,NewCNodeState,hibernate}}} ->
-            {noreply,State#state{c_node_state=NewCNodeState},hibernate};
+        {Id, {'$gcs_info_reply', {noreply, NewState}}} ->
+            {noreply, {NewState, InternalState}};
+        {Id, {'$gcs_info_reply', {noreply, NewState, hibernate}}} ->
+            {noreply, {NewState, InternalState}, hibernate};
         %
         % 'stop'
         %
-        {Id,{'$gcs_info_reply',{stop,Reason,NewCNodeState}}} ->
-            {stop,Reason,State#state{c_node_state=NewCNodeState}}
+        {Id, {'$gcs_info_reply', {stop, Reason, NewState}}} ->
+            {stop, Reason, {NewState, InternalState}}
     end.
 
 
@@ -701,8 +531,8 @@ handle_info(Info, #state{mbox=Mbox, c_node_state=CNodeState} = State) ->
 % directly to stdout.
 %
 update_message_buffer(undefined, {eol, ?C_NODE_START_MSG}) -> [];
-update_message_buffer(undefined, {eol, S}) -> io:fwrite("~s~n",[S]), undefined;
-update_message_buffer(undefined, {noeol, S}) -> io:fwrite("~s",[S]), undefined;
+update_message_buffer(undefined, {eol, S}) -> io:fwrite("~s~n", [S]), undefined;
+update_message_buffer(undefined, {noeol, S}) -> io:fwrite("~s", [S]), undefined;
 %
 % End of message marker. Process message as it was intended to.
 %
@@ -722,6 +552,6 @@ update_message_buffer(Buffer,{eol, ?C_NODE_END_MSG}) ->
 %
 % Otherwise: accumulate message in reverse order.
 %
-update_message_buffer(Buffer,{eol, S})   -> [$\n,S|Buffer];
+update_message_buffer(Buffer,{eol, S})   -> [$\n, S|Buffer];
 update_message_buffer(Buffer,{noeol, S}) -> [S|Buffer].
 

@@ -64,28 +64,6 @@ install.dependsOn install_include
 
 //=============================================================================
 //
-// Documentation
-//
-//=============================================================================
-task edoc {
-  doLast {
-    def unixRoot = rootDir.toString().replaceAll("\\\\","/")
-    def destDir = "{dir,\"$unixRoot/doc\"}"
-    def srcDir = "\"$unixRoot/src\""
-    erlang.eval("edoc:application(gen_c_server,$srcDir,[$destDir]).")
-  }
-}
-
-task install_edoc(type: Copy, dependsOn: edoc) {
-  from 'doc'
-  into "$ebuildAppDir/doc"
-  include '**/*'
-}
-
-install.dependsOn install_edoc
-
-//=============================================================================
-//
 // Testing
 //
 //=============================================================================

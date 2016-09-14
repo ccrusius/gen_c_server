@@ -22,6 +22,5 @@ all: install
 compile: ; ./gradlew build
 install: ; ./gradlew install
 clean:   ; ./gradlew clean
-edoc :   ; ./gradlew edoc
 shell:   ; epmd -daemon && ./gradlew shell && epmd -kill
 ct:      ; epmd -daemon && ./gradlew ct && epmd -kill
