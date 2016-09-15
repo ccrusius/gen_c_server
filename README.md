@@ -6,20 +6,21 @@
 **Table of Contents**
 
 - [Erlang Generic C Node Server](#erlang-generic-c-node-server)
-- [Description](#description)
+- [Summary](#summary)
+- [Erlang: The Behaviour](#erlang-the-behaviour)
     - [The `c_node/0` Callback](#the-cnode0-callback)
     - [The Internal Server State](#the-internal-server-state)
     - [Starting the Server, and the `init/2` Callback](#starting-the-server-and-the-init2-callback)
-    - [Stopping the Server, and the `terminate/3` Callback](#stopping-the-server-and-the-terminate3-callback)
+    - [Stopping the Server, and the `terminate/2` Callback](#stopping-the-server-and-the-terminate2-callback)
     - [Synchronous Calls to Erlang and the C Node](#synchronous-calls-to-erlang-and-the-c-node)
     - [Asynchronous Calls to Erlang and the C Node](#asynchronous-calls-to-erlang-and-the-c-node)
     - [Out-of-Band Messages](#out-of-band-messages)
-- [Callback Summary](#callback-summary)
-- [Function Summary](#function-summary)
-- [Writing a C Node](#writing-a-c-node)
+    - [Callback Summary](#callback-summary)
+    - [Function Summary](#function-summary)
+- [C: Writing a C Node](#c-writing-a-c-node)
     - [Limitations](#limitations)
-- [Compiling](#compiling)
-- [Compiling on Windows](#compiling-on-windows)
+    - [Compiling](#compiling)
+    - [Compiling on Windows](#compiling-on-windows)
 
 <!-- markdown-toc end -->
 
@@ -58,7 +59,14 @@ the `ei` library to manipulate Erlang terms.
 Inspired by Robby Raschke's work on
 [interfacing with Lua](https://github.com/rtraschke/erlang-lua).
 
-# Description
+# Summary
+
+1. [Write a C node](#c-writing-a-c-node)
+2. Write an Erlang callback module with `gen_c_server` behaviour.
+   * Call `c_init` from `init`, and `c_terminate` from `terminate`.
+   * Forward `handle_info` to `c_handle_info` if desired.
+
+# Erlang: The Behaviour
 
 If you are not familiar with the
 standard [`gen_server`](http://erlang.org/doc/man/gen_server.html)
@@ -67,7 +75,7 @@ one. The description that follows relies heavily on describing
 `gen_c_server` _in terms of `gen_server`_.
 
 We will describe how to write the C node
-in [another section](#writing-a-c-node). In this one, we'll describe
+in [another section](#c-writing-a-c-node). In this one, we'll describe
 the behaviour functions and callbacks. In what follows, `Mod` will
 refer to the Erlang module implementing this behaviour. That module's
 definition will contain something like this at the beginning:
@@ -137,7 +145,7 @@ Of course, the function is free to modify the input `Args`, or the
 `State` returned by `c_init`. What it should _not_ do is mess
 around with the `Opaque` parameters.
 
-## Stopping the Server, and the `terminate/3` Callback
+## Stopping the Server, and the `terminate/2` Callback
 
 The logic behind the `init/2` callback applies verbatim to the
 `terminate/2` callback. In `gen_server`, the callback takes in the
@@ -189,7 +197,7 @@ the message on to the C node by calling `gen_c_server:c_handle_info/2`
 with the same arguments as its input, which will result in a call to
 the C node's `gcs_handle_info`.
 
-# Callback Summary
+## Callback Summary
 
 * `init/2`
 * `terminate/2`
@@ -198,7 +206,7 @@ the C node's `gcs_handle_info`.
 * `handle_cast/2`
 * `handle_info/2`
 
-# Function Summary
+## Function Summary
 
 * `start/3`, `start/4`, `start_link/3`, `start_link/4`: These are
   completely equivalent to `gen_server`'s functions of the same
@@ -213,7 +221,7 @@ the C node's `gcs_handle_info`.
 * `c_handle_info/2`
 
 
-# Writing a C Node
+# C: Writing a C Node
 
 A C node is written by implementing the necessary callbacks, and linking
 the executable against `libgen_c_server.a`, which defines `main()` for you.
@@ -358,21 +366,21 @@ node, you can define a simple Erlang callback module as follows:
 ```erlang
 -module(my_c_server).
 -behaviour(gen_c_server).
--export([c_node/0, init/2, terminate/3, handle_info/3]).
+-export([c_node/0, init/2, terminate/2, handle_info/2]).
 
 c_node() -> "/path/to/my/c/node/executable".
 init(Args, Opaque) -> gen_c_server:c_init(Args, Opaque).
-terminate(Reason, State, Opaque) -> gen_c_server:c_terminate(Reason, State, Opaque).
-handle_info(Info, State, Opaque) -> gen_c_server:c_handle_info(Info, State, Opaque).
+terminate(Reason, ServerState) -> gen_c_server:c_terminate(Reason, ServerState).
+handle_info(Info, ServerState) -> gen_c_server:c_handle_info(Info, ServerState).
 ```
 With that, you can now:
 ```erlang
 {ok,Pid} = gen_c_server:start(my_c_server,[],[]),
-{1,0,0} = gen_c_server:call(Pid,"Any message"),
-ok = gen_c_server:cast(Pid,"Any old message"),
-{2,1,0} = gen_c_server:call(Pid,"Any message"),
+{1,0,0} = gen_c_server:c_call(Pid,"Any message"),
+ok = gen_c_server:c_cast(Pid,"Any old message"),
+{2,1,0} = gen_c_server:c_call(Pid,"Any message"),
 Pid ! "Any message, really",
-{3,1,1} = gen_c_server:call(Pid,[]),
+{3,1,1} = gen_c_server:c_call(Pid,[]),
 gen_c_server:stop(Pid).
 ```
 Note that the Erlang shell has to have a registered name, which means
@@ -391,7 +399,7 @@ In particular,
 * `gcs_handle_info` can only reply `{noreply,NewState}`,
      `{noreply,NewState,hibernate}` or `{stop,Reason,NewState}`.
 
-# Compiling
+## Compiling
 
 In a Unix system, typing `./gradlew install` should do it. Type
 `./gradlew tasks` to get a list of available build targets.
@@ -402,7 +410,7 @@ development. The `ct` target, for example, sets up and tears down
 bring you into an Erlang shell with the correct paths set for
 interactively testing things.
 
-# Compiling on Windows
+## Compiling on Windows
 
 Download the latest
 [pthreads-win32](https://sourceware.org/pthreads-win32/) pre-compiled
