@@ -174,7 +174,7 @@ pmap(Fun,List) ->
                        spawn(fun() -> pmap_do(Self,Fun,Item) end)
                      end,
                      List),
-    gather(Pids).
+    gather(Pids, []).
 
 pmap_do(Client,Fun,Item) ->
     %io:fwrite("pmap_do(~w,~w,~w): self=~w",[Client,Fun,Item,self()]),
@@ -182,10 +182,10 @@ pmap_do(Client,Fun,Item) ->
     %io:fwrite("pmap_do(~w,~w): message will be {~w,~w}",[Client,Fun,self(),V]),
     Client ! {self(),V}.
 
-gather([]) -> [];
-gather([H|T]) ->
+gather([], Acc) -> lists:reverse(Acc);
+gather([H|T], Acc) ->
     receive
         {H,Ret} ->
             %io:fwrite("gather(~w) received {~w,~w}",[[H|T],H,Ret]),
-            [Ret|gather(T)]
+            gather(T, [Ret|Acc])
     end.
