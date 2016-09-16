@@ -48,21 +48,6 @@ ext {
 
 install.dependsOn ebuild
 
-///
-/// One thing one may want to be able to do is to easily change the
-/// name of the behavior without having to edit the file itself (so
-/// the name change can be automated easily in build scripts).
-///
-
-task custom_gen_c_server(type: org.ccrusius.erlang.tasks.Compile) {
-  setSourceFile 'src/gen_c_server.erl'
-  setNewName 'custom_gen_c_server.erl'
-  addReplacement '\\bgen_c_server\\b', 'custom_gen_c_server'
-  setOutputDir "$ebuildAppDir/../custom_gen_c_server-1.0/ebin"
-}
-
-install.dependsOn custom_gen_c_server
-
 //=============================================================================
 //
 // Sources
@@ -89,11 +74,24 @@ task install_include(type: Copy) {
 
 install.dependsOn install_include
 
-//=============================================================================
-//
-// Testing
-//
-//=============================================================================
+/// ---------------------------------------------------------------------------
+///
+/// Testing
+///
+/// ---------------------------------------------------------------------------
+///
+/// One thing one may want to be able to do is to easily change the
+/// name of the behavior without having to edit the file itself (so
+/// the name change can be automated easily in build scripts).
+///
+
+task custom_gen_c_server(type: org.ccrusius.erlang.tasks.Compile) {
+  setSourceFile 'src/gen_c_server.erl'
+  setNewName 'custom_gen_c_server.erl'
+  addReplacement '\\bgen_c_server\\b', 'custom_gen_c_server'
+  setOutputDir "$rootDir/test/custom_gen_c_server-1.0/ebin"
+}
+
 task ct {
   dependsOn install
   ext.destDir = new File("$rootDir/build/test")
@@ -103,7 +101,7 @@ task ct {
     exec {
       executable 'ct_run'
       args '-pa', "$ebuildAppDir/ebin"
-      args '-pa', "$ebuildAppDir/../custom_gen_c_server-1.0/ebin"
+      args '-pa', "$rootDir/test/custom_gen_c_server-1.0/ebin"
       args '-logdir', "$destDir"
       args '-suite'
       args suites
@@ -112,6 +110,8 @@ task ct {
     }
   }
 }
+
+ct.dependsOn custom_gen_c_server
 
 //=============================================================================
 //
