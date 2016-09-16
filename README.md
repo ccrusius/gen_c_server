@@ -66,6 +66,9 @@ Inspired by Robby Raschke's work on
    * Call `c_init` from `init`, and `c_terminate` from `terminate`.
    * Forward `handle_info` to `c_handle_info` if desired.
 
+We will start with the Erlang callback module description, since this
+part should be more familiar to Erlang users.
+
 # Erlang: The Behaviour
 
 If you are not familiar with the
@@ -150,10 +153,15 @@ around with the `Opaque` parameters.
 The logic behind the `init/2` callback applies verbatim to the
 `terminate/2` callback. In `gen_server`, the callback takes in the
 `Reason` and the `State`, and does whatever it needs to do to clean
-up. In `gen_c_server`, it must also call the
-`gen_c_server:c_terminate` callback, which will take care of
-calling the C node's `gcs_terminate` function, and shutting it
-down. The `c_terminate` function accepts the same parameters as
+up. In `gen_c_server`, there are two differences:
+
+* The `terminate` state argument is instead `{State, Opaque}`, for
+  reasons described above.
+* The callback should call the `gen_c_server:c_terminate` function,
+  which will take care of calling the C node's `gcs_terminate`
+  function, and shutting the C node down.
+
+The `c_terminate` function accepts the same parameters as
 `terminate/2`, so the simplest callback implementation is
 ```erlang
 terminate(Reason, {State, Opaque} = ServerState) ->
@@ -231,7 +239,10 @@ you would implement in an Erlang `gen_server` callback module, implement a
 arguments as the Erlang callback, plus a last `ei_x_buff*` argument where the
 function should build its reply (when a reply is needed). The other
 arguments are `const char*` pointing to `ei` buffers containing the
-arguments themselves.
+arguments themselves. C node callbacks that receive a state receive
+`State`, not the `{State, Opaque}` tuple the Erlang callbacks
+receive. (The `Opaque` argument is necessary in Erlang so the C node
+can be called, so it is useless inside the C node itself.)
 
 A full C node skeleton thus looks like this:
 ```c
