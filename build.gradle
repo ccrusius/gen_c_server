@@ -1,5 +1,5 @@
 plugins {
-  id "org.ccrusius.erlang" version "1.1.1"
+  id "org.ccrusius.erlang" version "1.2.5"
 }
 
 apply plugin: 'c'
@@ -35,17 +35,32 @@ task wrapper(type: Wrapper) {
 //=============================================================================
 task(install)
 
-//=============================================================================
-//
-// Erlang
-//
-//=============================================================================
+/// ---------------------------------------------------------------------------
+///
+/// Erlang
+///
+/// ---------------------------------------------------------------------------
 ext {
     eiInclude = erlang.eval('io:format("~s", [code:lib_dir(erl_interface, include)]).')
     eiLib     = erlang.eval('io:format("~s", [code:lib_dir(erl_interface, lib)]).')
 }
 
 install.dependsOn ebuild
+
+///
+/// One thing one may want to be able to do is to easily change the
+/// name of the behavior without having to edit the file itself (so
+/// the name change can be automated easily in build scripts).
+///
+
+task custom_gen_c_server(type: org.ccrusius.erlang.tasks.Compile) {
+  setSourceFile 'src/gen_c_server.erl'
+  setNewName 'custom_gen_c_server.erl'
+  setOutputDir "$ebuildAppDir/../custom_gen_c_server-1.0/ebin"
+  setArguments '-DGEN_C_SERVER_MODULE_NAME=custom_gen_c_server'
+}
+
+install.dependsOn custom_gen_c_server
 
 //=============================================================================
 //
@@ -87,6 +102,7 @@ task ct {
     exec {
       executable 'ct_run'
       args '-pa', "$ebuildAppDir/ebin"
+      args '-pa', "$ebuildAppDir/../custom_gen_c_server-1.0/ebin"
       args '-logdir', "$destDir"
       args '-suite'
       args suites

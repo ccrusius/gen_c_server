@@ -20,24 +20,27 @@ all() -> [
           info_stop
          ].
 
-%%%============================================================================
+%%% ---------------------------------------------------------------------------
 %%%
-%%% gen_c_server callbacks
+%%% custom_gen_c_server callbacks
 %%%
-%%%============================================================================
+%%% This test suite uses a "custom" `gen_c_server' that was produced
+%%% by the build system by renaming the module.
+%%%
+%%% ---------------------------------------------------------------------------
 c_node() ->
     filename:join([os:getenv("ROOT_DIR"),
                    "build","install","reply_this","lib",
                    "reply_this"]).
 
 init(Args, Opaque) ->
-    gen_c_server:c_init(Args, Opaque).
+    custom_gen_c_server:c_init(Args, Opaque).
 
 terminate(Reason, ServerState) ->
-    gen_c_server:c_terminate(Reason, ServerState).
+    custom_gen_c_server:c_terminate(Reason, ServerState).
 
 handle_info(Info, ServerState) ->
-    gen_c_server:c_handle_info(Info, ServerState).
+    custom_gen_c_server:c_handle_info(Info, ServerState).
 
 
 %%==============================================================================
@@ -60,41 +63,41 @@ end_per_testcase(_TestCase, _Config) ->
 %%
 %%==============================================================================
 normal_replies(_Config) ->
-    {ok, Pid} = gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
-    10 = gen_c_server:c_call(Pid,{reply_this,{reply,10,undefined}}),
-    ok = gen_c_server:c_call(Pid,{reply_this,{reply,ok,[ok]}}),
-    [] = gen_c_server:c_call(Pid,{reply_this,{reply,[],10}}),
-    ok = gen_c_server:c_cast(Pid,{reply_this,{noreply,undefined}}),
+    {ok, Pid} = custom_gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
+    10 = custom_gen_c_server:c_call(Pid,{reply_this,{reply,10,undefined}}),
+    ok = custom_gen_c_server:c_call(Pid,{reply_this,{reply,ok,[ok]}}),
+    [] = custom_gen_c_server:c_call(Pid,{reply_this,{reply,[],10}}),
+    ok = custom_gen_c_server:c_cast(Pid,{reply_this,{noreply,undefined}}),
     Pid ! {reply_this,{noreply,undefined}},
-    gen_c_server:stop(Pid).
+    custom_gen_c_server:stop(Pid).
 
 timeout_replies(_Config) ->
-    {ok, Pid} = gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
-    ok = gen_c_server:c_cast(Pid,{reply_this,{noreply,undefined,hibernate}}),
-    10 = gen_c_server:c_call(Pid,{reply_this,{reply,10,undefined,hibernate}}),
+    {ok, Pid} = custom_gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
+    ok = custom_gen_c_server:c_cast(Pid,{reply_this,{noreply,undefined,hibernate}}),
+    10 = custom_gen_c_server:c_call(Pid,{reply_this,{reply,10,undefined,hibernate}}),
     Pid ! {reply_this,{noreply,undefined,hibernate}},
-    gen_c_server:stop(Pid).
+    custom_gen_c_server:stop(Pid).
 
 call_stop(_Config) ->
-    {ok, Pid} = gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
-    10 = gen_c_server:c_call(Pid,{reply_this,{stop,"I was asked to",10,undefined}}),
-    case (catch gen_c_server:stop(Pid)) of
+    {ok, Pid} = custom_gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
+    10 = custom_gen_c_server:c_call(Pid,{reply_this,{stop,"I was asked to",10,undefined}}),
+    case (catch custom_gen_c_server:stop(Pid)) of
         {'EXIT',{noproc,_}} -> ok;
         {'EXIT',{"I was asked to",_}} -> ok
     end.
 
 cast_stop(_Config) ->
-    {ok, Pid} = gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
-    ok = gen_c_server:c_cast(Pid,{reply_this,{stop,"I was asked to",undefined}}),
-    case (catch gen_c_server:stop(Pid)) of
+    {ok, Pid} = custom_gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
+    ok = custom_gen_c_server:c_cast(Pid,{reply_this,{stop,"I was asked to",undefined}}),
+    case (catch custom_gen_c_server:stop(Pid)) of
         {'EXIT',{noproc,_}} -> ok;
         {'EXIT',{"I was asked to",_}} -> ok
     end.
 
 info_stop(_Config) ->
-    {ok, Pid} = gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
+    {ok, Pid} = custom_gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
     Pid ! {reply_this,{stop,"I was asked to",undefined}},
-    case (catch gen_c_server:stop(Pid)) of
+    case (catch custom_gen_c_server:stop(Pid)) of
         {'EXIT',{noproc,_}} -> ok;
         {'EXIT',{"I was asked to",_}} -> ok
     end.
