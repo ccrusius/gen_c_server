@@ -90,11 +90,7 @@
 %% @end
 %%
 %%==============================================================================
--ifndef(GEN_C_SERVER_MODULE_NAME).
--define(GEN_C_SERVER_MODULE_NAME, gen_c_server).
--endif.
-
--module(?GEN_C_SERVER_MODULE_NAME).
+-module(gen_c_server).
 -behaviour(gen_server).
 
 %%% ---------------------------------------------------------------------------

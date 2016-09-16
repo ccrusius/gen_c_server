@@ -1,5 +1,5 @@
 plugins {
-  id "org.ccrusius.erlang" version "1.2.5"
+  id "org.ccrusius.erlang" version "1.3.0"
 }
 
 apply plugin: 'c'
@@ -56,8 +56,8 @@ install.dependsOn ebuild
 task custom_gen_c_server(type: org.ccrusius.erlang.tasks.Compile) {
   setSourceFile 'src/gen_c_server.erl'
   setNewName 'custom_gen_c_server.erl'
+  addReplacement '\\bgen_c_server\\b', 'custom_gen_c_server'
   setOutputDir "$ebuildAppDir/../custom_gen_c_server-1.0/ebin"
-  setArguments '-DGEN_C_SERVER_MODULE_NAME=custom_gen_c_server'
 }
 
 install.dependsOn custom_gen_c_server
