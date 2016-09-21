@@ -27,6 +27,17 @@
 
 #include "erl_interface.h"
 
+#define GCS_EXIT_INVALID_ARGC            1
+#define GCS_EXIT_GEN_CALL_SEND           2
+#define GCS_EXIT_NO_HOST                 3
+#define GCS_EXIT_EI_CONNECT_INIT         4
+#define GCS_EXIT_EI_CONNECT              5
+#define GCS_EXIT_PTHREAD_CREATE          6
+#define GCS_EXIT_EI_RECONNECT            7
+#define GCS_EXIT_EI_SEND                 8
+#define GCS_EXIT_GEN_CALL                9
+#define GCS_EXIT_MUTEX_LOCK             10
+
 /*==============================================================================
  *
  * ei utilities
@@ -203,6 +214,29 @@ static void trace_print(const char *fmt,...) {
     if (ei_get_tracelevel() > 3) { C_NODE_PRINT("<INFO>[TRACE] "); }
 }
 
+/* =========================================================================
+ *
+ * Pthread utilities
+ *
+ * ========================================================================= */
+static int pthread_failures = 0;
+static const int PTHREAD_MAX_FAILURES = 1;
+
+static void increment_pthread_failures(const char* msg, int status)
+{
+  ++pthread_failures;
+  error_print(msg);
+  if(pthread_failures < PTHREAD_MAX_FAILURES) return;
+  error_print("Too many pthread failures");
+  exit(status);
+}
+
+#define gcs_pthread_mutex_lock(VAR) \
+  while(pthread_mutex_lock(&VAR) != 0) \
+    increment_pthread_failures(\
+      "pthread_mutex_lock failed (" #VAR ")",\
+      GCS_EXIT_MUTEX_LOCK);
+
 /*==============================================================================
  *
  * Main
@@ -221,7 +255,7 @@ int main(int argc, char *argv[])
                 "Is this executable being called from gen_c_server?\n"
                 "Usage: %s <name> <hostname> <remote> <cookie> <trace level>",
                 argv[0]);
-        exit(1);
+        exit(GCS_EXIT_INVALID_ARGC);
     }
 
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -270,7 +304,7 @@ _connect(struct c_node_state *state)
         error_print("Can not resolve host information for %s. (%d)"
                     ,state->c_node_hostname
                     ,h_errno);
-        exit(3);
+        exit(GCS_EXIT_NO_HOST);
     }
 
     state->c_node_fullname = (char*)
@@ -295,7 +329,7 @@ _connect(struct c_node_state *state)
                state->c_node_hostname,
                state->c_node_name,
                state->c_node_fullname);
-        exit(4);
+        exit(GCS_EXIT_EI_CONNECT_INIT);
     }
 
     info_print("C node '%s' starting.",ei_thisnodename(&state->ec));
@@ -305,7 +339,7 @@ _connect(struct c_node_state *state)
         error_print("ei_connect '%s' failed: %d (%s)",
                 state->erlang_node_fullname,
                 erl_errno, strerror(erl_errno));
-        exit(5);
+        exit(GCS_EXIT_EI_CONNECT);
     }
 
     info_print("C node '%s' connected.",ei_thisnodename(&state->ec));
@@ -317,7 +351,7 @@ _reconnect(struct c_node_state *state)
     if ((state->connection_fd = ei_connect(&state->ec, state->erlang_node_fullname)) < 0) {
         error_print("Cannot reconnect to parent node '%s': %d (%s)",
                 state->erlang_node_fullname, erl_errno, strerror(erl_errno));
-        exit(7);
+        exit(GCS_EXIT_EI_RECONNECT);
     }
 }
 
@@ -458,7 +492,7 @@ _execution_loop(void *arg)
 
     while(running) {
         /* Wait for a message to be added to the queue. */
-        pthread_mutex_lock(&empty_queue_lock);
+        gcs_pthread_mutex_lock(empty_queue_lock);
         while (current_message == NULL)
             pthread_cond_wait(&empty_queue_cond,&empty_queue_lock);
         pthread_mutex_unlock(&empty_queue_lock);
@@ -535,7 +569,7 @@ _execution_loop(void *arg)
                                 out_msg_buffer.buff,
                                 out_msg_buffer.index) < 0) {
                         error_print("Could not send message reply.");
-                        exit(8);
+                        exit(GCS_EXIT_EI_SEND);
                     }
                 }
             }
@@ -543,7 +577,7 @@ _execution_loop(void *arg)
             debug_print("Finished processing message.");
 
             /* Drop the first message from the queue. */
-            pthread_mutex_lock(&message_queue_lock);
+            gcs_pthread_mutex_lock(message_queue_lock);
             struct message *next_message = current_message->next;
             message_free(current_message);
             current_message = next_message;
@@ -583,7 +617,7 @@ _main_message_loop(struct c_node_state *state)
     pthread_t execution_thread;
     if(pthread_create(&execution_thread,NULL,&_execution_loop,state)!=0) {
         error_print("pthread_create failed: %d (%s)", errno, strerror(errno));
-        exit(6);
+        exit(GCS_EXIT_PTHREAD_CREATE);
     }
 
     ei_x_buff msg_buffer;
@@ -631,7 +665,7 @@ _main_message_loop(struct c_node_state *state)
                                             reply_buffer.buff,
                                             reply_buffer.index) < 0) {
                                     error_print("Could not send message reply.");
-                                    exit(2);
+                                    exit(GCS_EXIT_GEN_CALL_SEND);
                                 }
                                 break;
                             }
@@ -736,7 +770,7 @@ _process_gen_call(const char* gen_call_msg, ei_x_buff* reply)
     ei_s_print_term(&err_buff,gen_call_msg,&index);
     error_print("Unprocessed `$gen_call' message\nMessage %s",err_buff);
     free(err_buff);
-    exit(9);
+    exit(GCS_EXIT_GEN_CALL);
 
     return 0;
 }
