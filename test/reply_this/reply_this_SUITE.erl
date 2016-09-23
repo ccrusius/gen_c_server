@@ -63,7 +63,7 @@ end_per_testcase(_TestCase, _Config) ->
 %%
 %%==============================================================================
 normal_replies(_Config) ->
-    {ok, Pid} = custom_gen_c_server:start(?MODULE,[],[{tracelevel,0}]),
+    {ok, Pid} = custom_gen_c_server:start(?MODULE,[],[{tracelevel,10}]),
     10 = custom_gen_c_server:c_call(Pid,{reply_this,{reply,10,undefined}}),
     ok = custom_gen_c_server:c_call(Pid,{reply_this,{reply,ok,[ok]}}),
     [] = custom_gen_c_server:c_call(Pid,{reply_this,{reply,[],10}}),

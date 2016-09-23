@@ -186,6 +186,25 @@ state_clearbuffer(State) -> State#state{buffer = undefined}.
 
 %%%----------------------------------------------------------------------------
 %%%
+%%% Debugging/Logging
+%%%
+%%%----------------------------------------------------------------------------
+log(trace, TraceLevel, Format, Data)
+  when is_integer(TraceLevel) andalso TraceLevel > 3 ->
+    io:fwrite(["<INFO>[TRACE] gen_c_server:" | Format], Data);
+log(debug, TraceLevel, Format, Data)
+  when is_integer(TraceLevel) andalso TraceLevel > 2 ->
+    io:fwrite(["<INFO>[DEBUG] gen_c_server:" | Format], Data);
+log(info, TraceLevel, Format, Data)
+  when is_integer(TraceLevel) andalso TraceLevel > 0 ->
+    io:fwrite(["<INFO> gen_c_server:" | Format], Data);
+log(Level, #state{tracelevel = TraceLevel}, Format, Data) ->
+    log(Level, TraceLevel, Format, Data);
+log(_, _, _, _) ->
+    ok.
+
+%%%----------------------------------------------------------------------------
+%%%
 %%% Starting
 %%%
 %%%----------------------------------------------------------------------------
@@ -216,6 +235,7 @@ start_link(Name, Mod, Args, Options) ->
                     , proplists:delete(tracelevel, Options)).
 
 init([Mod, TraceLevel, Args]) ->
+    log(debug, TraceLevel, "init(~p)~n", [[Mod, TraceLevel, Args]]),
     case node_id(Mod) of
         {command_not_found, _} = Reply -> {stop, Reply};
         {_Cmd, NodeName, HostName} ->
@@ -236,6 +256,8 @@ c_init(Args, InternalState, SpawnType) ->
     process_flag(trap_exit, true),
     #state{mod = Mod, mbox = Mbox, tracelevel = TraceLevel} = InternalState,
     {Exe, NodeName, HostName} = node_id(Mod),
+    log(trace, TraceLevel, "node_id={\"~s\",\"~s\",\"~s\"}~n",
+        [Exe, NodeName, HostName]),
     Argv = [NodeName, HostName, atom_to_list(node()),
             atom_to_list(erlang:get_cookie()),
             integer_to_list(TraceLevel)],
@@ -245,6 +267,7 @@ c_init(Args, InternalState, SpawnType) ->
             spawn -> {string:join([Exe | Argv], " "), CommonPortSettings};
             spawn_executable -> {Exe, [{args, Argv} | CommonPortSettings]}
         end,
+    log(debug, TraceLevel, "c_init:cmd=\"~s\"~n", [Cmd]),
     Port = open_port({SpawnType, Cmd}, PortSettings),
     NewInternalState = InternalState#state{port = Port},
     case wait_for_startup(NewInternalState) of
