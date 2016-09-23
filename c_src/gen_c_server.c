@@ -249,17 +249,27 @@ static void _main_message_loop(struct c_node_state *state);
 
 int main(int argc, char *argv[])
 {
-    if(argc != 6) {
-        info_print(
-                "Invalid arguments when starting generic C node.\n"
-                "Is this executable being called from gen_c_server?\n"
-                "Usage: %s <name> <hostname> <remote> <cookie> <trace level>",
-                argv[0]);
-        exit(GCS_EXIT_INVALID_ARGC);
-    }
-
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
+
+    if(argc != 6) {
+        error_print(
+                 "Invalid arguments when starting generic C node.\n"
+                 "Is this executable being called from gen_c_server?\n"
+                 "Usage: %s <name> <hostname> <remote> <cookie> <trace level>\n"
+                 "Call:  %s %s %s %s %s %s %s %s %s %s",
+                 argv[0], argv[0],
+                 (argc > 1 ? argv[1] : ""),
+                 (argc > 2 ? argv[2] : ""),
+                 (argc > 3 ? argv[3] : ""),
+                 (argc > 4 ? argv[4] : ""),
+                 (argc > 5 ? argv[5] : ""),
+                 (argc > 6 ? argv[6] : ""),
+                 (argc > 7 ? argv[7] : ""),
+                 (argc > 8 ? argv[8] : ""),
+                 (argc > 9 ? argv[9] : ""));
+        exit(GCS_EXIT_INVALID_ARGC);
+    }
 
     erl_init(NULL,0);
 
