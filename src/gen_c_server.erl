@@ -235,14 +235,17 @@ c_init(Args, InternalState) ->
 c_init(Args, InternalState, SpawnType) ->
     process_flag(trap_exit, true),
     #state{mod = Mod, mbox = Mbox, tracelevel = TraceLevel} = InternalState,
-    {Cmd, NodeName, HostName} = node_id(Mod),
-    Port = open_port({SpawnType, Cmd},
-                     [ {args, [NodeName, HostName, atom_to_list(node()),
-                               atom_to_list(erlang:get_cookie()),
-                               integer_to_list(TraceLevel)]},
-                       stream, {line,100},
-                       stderr_to_stdout,
-                       exit_status]),
+    {Exe, NodeName, HostName} = node_id(Mod),
+    Argv = [NodeName, HostName, atom_to_list(node()),
+            atom_to_list(erlang:get_cookie()),
+            integer_to_list(TraceLevel)],
+    CommonPortSettings = [stream, {line, 100}, stderr_to_stdout, exit_status],
+    {Cmd, PortSettings} =
+        case SpawnType of
+            spawn -> {string:join([Exe | Argv], " "), CommonPortSettings};
+            spawn_executable -> {Exe, [{args, Argv} | CommonPortSettings]}
+        end,
+    Port = open_port({SpawnType, Cmd}, PortSettings),
     NewInternalState = InternalState#state{port = Port},
     case wait_for_startup(NewInternalState) of
         {stop, Error} -> {stop, Error};

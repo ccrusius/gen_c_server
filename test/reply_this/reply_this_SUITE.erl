@@ -34,7 +34,7 @@ c_node() ->
                    "reply_this"]).
 
 init(Args, Opaque) ->
-    custom_gen_c_server:c_init(Args, Opaque).
+    custom_gen_c_server:c_init(Args, Opaque, spawn).
 
 terminate(Reason, ServerState) ->
     custom_gen_c_server:c_terminate(Reason, ServerState).
