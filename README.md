@@ -148,6 +148,12 @@ Of course, the function is free to modify the input `Args`, or the
 `State` returned by `c_init`. What it should _not_ do is mess
 around with the `Opaque` parameters.
 
+Lastly, there is a `c_init/3` function that takes as its third
+argument the "spawn type" for the C node. The possible values are
+`spawn_executable` and `spawn`. The first is the value `c_init/2`
+uses. The second is useful when the C node executable is wrapped in a
+shell script.
+
 ## Stopping the Server, and the `terminate/2` Callback
 
 The logic behind the `init/2` callback applies verbatim to the

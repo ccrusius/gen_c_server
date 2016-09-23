@@ -106,7 +106,7 @@
          cast/2,
          c_cast/2,
          c_handle_info/2,
-         c_init/2, c_terminate/2]).
+         c_init/2, c_init/3, c_terminate/2]).
 
 
 %%% ---------------------------------------------------------------------------
@@ -230,10 +230,13 @@ init([Mod, TraceLevel, Args]) ->
     end.
 
 c_init(Args, InternalState) ->
+    c_init(Args, InternalState, spawn_executable).
+
+c_init(Args, InternalState, SpawnType) ->
     process_flag(trap_exit, true),
     #state{mod = Mod, mbox = Mbox, tracelevel = TraceLevel} = InternalState,
     {Cmd, NodeName, HostName} = node_id(Mod),
-    Port = open_port({spawn_executable, Cmd},
+    Port = open_port({SpawnType, Cmd},
                      [ {args, [NodeName, HostName, atom_to_list(node()),
                                atom_to_list(erlang:get_cookie()),
                                integer_to_list(TraceLevel)]},
